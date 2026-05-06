@@ -1,0 +1,33 @@
+thinking_heavy:
+  allowed_when_allow_pro_false: true
+  preferred_labels:
+    - Thinking Heavy
+    - Heavy
+    - GPT Thinking Heavy
+    - Thinking High
+    - High Thinking
+thinking_extended:
+  allowed_when_allow_pro_false: true
+  preferred_labels:
+    - Extended
+    - Extended Thinking
+    - Thinking Extended
+    - Longer Thinking
+thinking_normal:
+  allowed_when_allow_pro_false: true
+  preferred_labels:
+    - Thinking
+    - Standard
+    - Default
+    - Normal
+pro:
+  allowed_when_allow_pro_false: false
+  preferred_labels:
+    - Pro
+    - GPT Pro
+pro_extended:
+  allowed_when_allow_pro_false: false
+  preferred_labels:
+    - Pro Extended
+    - Extended Pro
+    - Pro + Extended

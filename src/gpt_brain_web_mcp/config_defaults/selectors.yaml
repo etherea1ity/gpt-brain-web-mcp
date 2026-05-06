@@ -1,0 +1,32 @@
+prompt_box:
+  - role:textbox
+  - "#prompt-textarea"
+  - textarea
+  - div[contenteditable="true"]
+send_button:
+  - role:button:Send
+  - button[data-testid="send-button"]
+  - button[aria-label*="Send"]
+stop_button:
+  - role:button:Stop
+  - button[aria-label*="Stop"]
+model_picker:
+  - role:button:Model
+  - button[aria-haspopup="menu"]
+conversation_ready:
+  - div[contenteditable="true"]
+  - textarea
+login_indicators:
+  - text:Log in
+  - text:Sign up
+captcha_indicators:
+  - text:Verify you are human
+  - text:CAPTCHA
+rate_limit_indicators:
+  - text:rate limit
+  - text:try again later
+source_links:
+  - a[href^="http"]
+assistant_messages:
+  - '[data-message-author-role="assistant"]'
+  - article
