@@ -16,7 +16,11 @@ EXPECTED = {
     "ask_web",
     "start_research",
     "get_research_result",
+    "get_job_result",
     "cancel_research_job",
+    "delete_local_record",
+    "purge_project_records",
+    "delete_remote_conversation",
     "list_web_sessions",
     "open_login_window",
     "doctor",
@@ -66,7 +70,8 @@ async def _run() -> dict[str, Any]:
                 "ask_brain",
                 {
                     "question": f"Reply with exactly: {nonce}",
-                    "save_session": True,
+                    "save_session": False,
+                    "conversation_strategy": "new",
                 },
             )
             decoded = _decode_tool_result(call)

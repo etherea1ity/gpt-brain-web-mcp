@@ -23,3 +23,12 @@ Only explicit MCP input fields (`question`, optional `context`, and research top
 ## Optional API fallback
 
 API fallback is not enabled by default. If implemented/configured later, it must remain explicit and must not silently consume API billing.
+
+
+## Conversation retention
+
+`save_session=false` by default, so normal MCP calls do not create local message audit records unless requested. Explicit project thread pointers are stored separately from local sessions. Local records can be removed with `delete_local_record` / `records delete`; remote ChatGPT conversation deletion requires an explicit `https://chatgpt.com/c/...` URL and confirmation.
+
+## Project fallback safety
+
+Explicit `project` requests fail closed if the ChatGPT Project cannot be opened. The tool sends into the current chat only when the caller explicitly sets `allow_project_fallback=true`.

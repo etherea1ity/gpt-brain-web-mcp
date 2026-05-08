@@ -1,22 +1,22 @@
 # ChatGPT Web Brain Gateway MCP
 
-`gpt-brain-web-mcp` lets Codex Desktop, Codex CLI, and other MCP clients call a managed local "external brain" backed by the **ChatGPT web UI**.
+`gpt-brain-web-mcp` lets Codex Desktop, Codex CLI, OMX, and other MCP clients call a managed local “external brain” backed by the **ChatGPT web UI**.
 
-The default path is **not OpenAI API** and **not codex-account**. The main path is:
+The default path is **not OpenAI API** and **not codex-account**:
 
 ```text
-MCP Client -> MCP Server -> Local Browser Daemon -> dedicated Playwright Chromium profile -> chatgpt.com
+MCP Client -> MCP Server -> Browser daemon/session manager -> dedicated Playwright Chromium profile -> chatgpt.com
 ```
 
 ## Why web-first?
 
-Some ChatGPT capabilities are account/UI features: model picker modes, Thinking/Thinking Heavy, Extended Thinking, Web Search, and Deep Research. This project treats the logged-in ChatGPT web session as the brain while keeping it local, explicit, and diagnosable.
+Some ChatGPT capabilities are account/UI features: model picker modes, Thinking/Thinking Heavy, Extended Thinking, Web Search, Pro/Pro Extended, and Deep Research. This project treats the logged-in ChatGPT web session as the brain while keeping the browser local, explicit, and diagnosable.
 
-API fallback can be added/configured separately, but it is not default. Codex-account fallback is not default either.
+API and Codex-account backends are optional future/fallback paths only. They are not the default route.
 
 ## Why a dedicated browser profile?
 
-The daemon launches a Playwright Chromium persistent profile under `~/.gpt-brain-web/browser-profile` (or `%USERPROFILE%\.gpt-brain-web\browser-profile` on Windows). It does **not** use your daily Chrome/Edge/Safari, does **not** read their cookies, and does **not** steal profiles. You log in manually once using `gpt-brain-web login`; subsequent daemon calls reuse that dedicated profile.
+The daemon launches a Playwright Chromium persistent profile under `~/.gpt-brain-web/browser-profile` (or `%USERPROFILE%\.gpt-brain-web\browser-profile` on Windows). It does **not** use your daily Chrome/Edge/Safari, does **not** read their cookies, and does **not** steal profiles. You log in manually once using `gpt-brain-web login`; later calls reuse that dedicated profile.
 
 ## Safety boundaries
 
@@ -25,8 +25,8 @@ The daemon launches a Playwright Chromium persistent profile under `~/.gpt-brain
 - No CAPTCHA, 2FA, rate-limit, usage-limit, or paywall bypass.
 - No automatic purchase/upgrade clicks.
 - No default Pro / Pro Extended usage.
-- No default repo upload. Only explicit `question`/`context` is sent.
-- Secrets are redacted before logs, SQLite storage, and final output.
+- No default repo upload. Only explicit `question`/`context`/`topic` fields are sent.
+- Secrets are redacted before logs, SQLite storage, artifacts, and final output.
 
 If login expires or ChatGPT asks for user action, jobs return `needs_user_action` and tell you to run `gpt-brain-web login`.
 
@@ -35,7 +35,7 @@ If login expires or ChatGPT asks for user action, jobs return `needs_user_action
 ### macOS / Linux / WSL
 
 ```bash
-git clone <repo>
+git clone https://github.com/etherea1ity/gpt-brain-web-mcp.git
 cd gpt-brain-web-mcp
 ./install.sh
 ```
@@ -43,7 +43,7 @@ cd gpt-brain-web-mcp
 ### Windows PowerShell
 
 ```powershell
-git clone <repo>
+git clone https://github.com/etherea1ity/gpt-brain-web-mcp.git
 cd gpt-brain-web-mcp
 .\install.ps1
 ```
@@ -57,7 +57,7 @@ Install does the ordinary setup:
 5. Creates `~/.gpt-brain-web` directories.
 6. Initializes SQLite.
 7. Safely merges `~/.codex/config.toml` and creates a timestamp backup.
-8. Runs doctor and a pre-login mock smoke (this is only an install sanity check).
+8. Runs doctor and a pre-login mock smoke. This is only an install sanity check; final acceptance is live ChatGPT Web.
 
 Dry run:
 
@@ -87,7 +87,7 @@ gpt-brain-web mcp uninstall-codex
 gpt-brain-web login
 ```
 
-A dedicated Playwright Chromium window opens at `chatgpt.com`. Log in yourself. The tool does not type credentials, solve 2FA, or bypass CAPTCHA. When done, close the window or leave the worker profile for the daemon.
+A dedicated Playwright Chromium window opens at `chatgpt.com`. Log in yourself. The tool does not type credentials, solve 2FA, bypass CAPTCHA, or read your normal browser profile.
 
 ## Common commands
 
@@ -99,16 +99,17 @@ gpt-brain-web daemon stop
 gpt-brain-web smoke
 gpt-brain-web cleanup
 gpt-brain-web mcp install-codex
-gpt-brain-web mcp uninstall-codex
+gpt-brain-web mcp tools
+gpt-brain-web records list
+gpt-brain-web records delete <session_or_job_id>
+gpt-brain-web records purge-project <project>
 ```
 
 Mock smoke does not consume your account and is not final acceptance. Live smoke is gated:
 
 ```bash
-RUN_LIVE_CHATGPT_WEB=1 gpt-brain-web smoke
+RUN_LIVE_CHATGPT_WEB=1 GPT_BRAIN_WEB_MOCK=0 gpt-brain-web smoke
 ```
-
-It sends one short prompt and requires you to have already run `gpt-brain-web login`.
 
 Full live validation for maintainers:
 
@@ -127,7 +128,7 @@ Install merges a block like this without deleting existing settings:
 [mcp_servers.gpt-brain-web]
 command = "/path/to/gpt-brain-web-mcp/.venv/bin/python"
 args = ["-m", "gpt_brain_web_mcp.server"]
-env = { "GPT_BRAIN_BACKEND" = "web-chatgpt", "GPT_BRAIN_DEFAULT_TIER" = "thinking_heavy", "GPT_BRAIN_ALLOW_PRO_DEFAULT" = "false", "GPT_BRAIN_DEFAULT_PROJECT" = "Codex Brain", "GPT_BRAIN_CONVERSATION_POLICY" = "reuse_project", "GPT_BRAIN_BROWSER_HEADLESS" = "true", "GPT_BRAIN_HOME" = "/home/you/.gpt-brain-web" }
+env = { "GPT_BRAIN_BACKEND" = "web-chatgpt", "GPT_BRAIN_DEFAULT_TIER" = "thinking_heavy", "GPT_BRAIN_ALLOW_PRO_DEFAULT" = "false", "GPT_BRAIN_SAVE_SESSION_DEFAULT" = "false", "GPT_BRAIN_DEFAULT_PROJECT" = "Codex Brain", "GPT_BRAIN_CONVERSATION_POLICY" = "reuse_project", "GPT_BRAIN_MAX_BROWSER_JOBS" = "1", "GPT_BRAIN_BROWSER_HEADLESS" = "true", "GPT_BRAIN_HOME" = "/home/you/.gpt-brain-web" }
 ```
 
 Restart Codex after changing MCP config.
@@ -138,29 +139,33 @@ Restart Codex after changing MCP config.
 - `ask_web`
 - `start_research`
 - `get_research_result`
+- `get_job_result`
 - `cancel_research_job`
 - `list_web_sessions`
+- `delete_local_record`
+- `purge_project_records`
+- `delete_remote_conversation`
 - `open_login_window`
 - `doctor`
 - `cleanup_browser`
 - `daemon_status`
 
-### Project and conversation management
+## Project and conversation management
 
-The gateway now treats `project` as the primary routing key for Codex + ChatGPT work:
+The gateway treats `project` as the routing key **only when the MCP caller explicitly provides it**:
 
-- If `project` is omitted, requests go to `GPT_BRAIN_DEFAULT_PROJECT` (`Codex Brain` by default). This gives everyday Codex calls one stable "big project" instead of anonymous drift.
-- If `project` is provided, only that project's latest conversation is reused. Different projects do not share conversation URLs.
-- `save_session=true` writes a local SQLite audit/session record; it is not the same thing as choosing whether ChatGPT should reuse a thread.
-- `conversation_strategy="reuse_project"` (default) reuses the latest known project conversation when possible.
-- `conversation_strategy="new"` starts a fresh project conversation and then binds the project to the new URL after ChatGPT creates one.
-- `conversation_strategy="resume_session"` plus `session_id` resumes a stored local session's `conversation_url`.
+- If `project` is omitted, the response is labeled with `GPT_BRAIN_DEFAULT_PROJECT` (`Codex Brain` by default), but ChatGPT is opened in a fresh global/new chat by default. This prevents silent contamination of one giant thread.
+- If `project` is provided, `conversation_strategy="reuse_project"` reuses that project's latest known ChatGPT conversation URL.
+- If an explicit ChatGPT Project cannot be opened, the request fails closed with `needs_user_action` unless `allow_project_fallback=true` is explicitly provided.
+- `conversation_strategy="new"` starts a real new ChatGPT composer before sending; inside an explicit project it opens the project landing composer.
+- `conversation_strategy="resume_session"` plus `session_id` resumes a stored local session URL.
 - `conversation_strategy="resume_url"` plus `conversation_url` resumes an explicit ChatGPT `/c/...` URL.
-- `start_research` always uses an isolated job conversation so Deep Research / web research does not pollute the normal project thread.
+- `save_session=false` by default. Set `save_session=true` only when you want a local SQLite audit record.
+- `start_research` always uses an isolated job conversation so Deep Research / web research does not pollute normal project threads.
 
-For real ChatGPT Projects, the browser adapter opens the dedicated sidebar, expands `More -> Projects` when necessary, and clicks an existing project row. It does not auto-create projects or upload project files. If the configured project is missing, the tool falls back to the current/new chat context with a warning.
+For real ChatGPT Projects, the browser adapter opens the dedicated sidebar, expands `More -> Projects` when necessary, and clicks an existing project row. It does not auto-create projects or upload project files.
 
-### ask_brain default strategy
+## ask_brain default strategy
 
 ```json
 {
@@ -169,8 +174,8 @@ For real ChatGPT Projects, the browser adapter opens the dedicated sidebar, expa
   "allow_pro": false,
   "web_search": false,
   "async": false,
-  "project": "Codex Brain",
-  "conversation_strategy": "reuse_project"
+  "save_session": false,
+  "conversation_strategy": "new when project omitted; reuse_project when project is explicit"
 }
 ```
 
@@ -182,7 +187,7 @@ thinking_heavy -> thinking_extended -> thinking_normal
 
 If the UI does not expose the requested mode, the result includes `fallback_chain` and `warnings`. The server does not pretend a mode was used if it could not be selected.
 
-### Pro / Pro Extended
+## Pro / Pro Extended
 
 Pro tiers are opt-in only:
 
@@ -196,17 +201,41 @@ Pro tiers are opt-in only:
 
 If `allow_pro=false`, requests for `pro` or `pro_extended` are downgraded/warned.
 
-### ask_web
+## ask_web
 
 `ask_web` enables ChatGPT web/search capability if visible in the UI. Sources/citations are extracted best-effort. If sources are missing, the response includes a warning.
 
-### start_research
+## Async jobs and research heartbeat
 
-`start_research` is always asynchronous and uses a separate job conversation. It quickly returns a `job_id`; use `get_research_result` to poll. `get_research_result` returns both `requested_research_mode` and `resolved_research_mode` so callers can tell whether real Deep Research was used or a web-research prompt fallback was used. The backend attempts to detect and select a visible Deep Research UI control. If that UI is not detectable/selectable for the logged-in account, the job falls back to a Web Research prompt and records:
+`ask_brain` supports `async_request=true`; `start_research` is always asynchronous. Poll either with `get_job_result` or `get_research_result`.
 
-```text
-Deep Research UI not available; used web research fallback.
+Long jobs stay inside the workflow: the browser adapter records heartbeat events while waiting for ChatGPT output and can refresh once when no progress is observed. Useful knobs:
+
+```bash
+GPT_BRAIN_RESPONSE_TIMEOUT_SECONDS=600
+GPT_BRAIN_HEARTBEAT_SECONDS=20
+GPT_BRAIN_STALE_REFRESH_SECONDS=240
 ```
+
+`get_research_result` returns `requested_research_mode` and `resolved_research_mode` so callers can tell whether real Deep Research was used or a web-research prompt fallback was used. If Deep Research UI is not detectable/selectable for the logged-in account, the job falls back with an explicit warning instead of pretending.
+
+## Cleanup and deletion
+
+Local cleanup:
+
+```bash
+gpt-brain-web records list
+gpt-brain-web records delete job_...
+gpt-brain-web records purge-project "Project Name"
+```
+
+Remote ChatGPT conversation deletion is explicit and guarded:
+
+```bash
+gpt-brain-web records delete-remote https://chatgpt.com/c/... --confirm
+```
+
+The remote delete command only accepts explicit `https://chatgpt.com/c/...` URLs and requires `--confirm`.
 
 ## Running tests
 
@@ -218,8 +247,10 @@ GPT_BRAIN_WEB_MOCK=1 pytest
 Live tests are gated and skipped by default:
 
 ```bash
-RUN_LIVE_CHATGPT_WEB=1 pytest tests/live
+RUN_LIVE_CHATGPT_WEB=1 GPT_BRAIN_WEB_MOCK=0 pytest tests/live
 ```
+
+Mock/unit tests prove CI behavior. Release acceptance must also pass the live ChatGPT Web validation commands above.
 
 ## UI changes
 
@@ -238,11 +269,11 @@ See [`docs/troubleshooting.md`](docs/troubleshooting.md).
 Tell them:
 
 ```bash
-git clone <repo>
+git clone https://github.com/etherea1ity/gpt-brain-web-mcp.git
 cd gpt-brain-web-mcp
 ./install.sh
 gpt-brain-web login
-RUN_LIVE_CHATGPT_WEB=1 gpt-brain-web smoke
+RUN_LIVE_CHATGPT_WEB=1 GPT_BRAIN_WEB_MOCK=0 gpt-brain-web smoke
 ```
 
 No large manual config copy is required.

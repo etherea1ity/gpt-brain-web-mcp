@@ -37,21 +37,29 @@ def create_mcp(service=None):
     mcp = FastMCP("gpt-brain-web-mcp")
 
     @mcp.tool()
-    async def ask_brain(question: str, project: str | None = None, context: str | None = None, tier: str | None = None, allow_pro: bool = False, web_search: bool = False, async_request: bool = False, save_session: bool = True, conversation_strategy: str = "reuse_project", session_id: str | None = None, conversation_url: str | None = None) -> dict[str, Any]:
-        return await runner.run("tool_ask_brain", question=question, project=project, context=context, tier=tier, allow_pro=allow_pro, web_search=web_search, async_request=async_request, save_session=save_session, conversation_strategy=conversation_strategy, session_id=session_id, conversation_url=conversation_url)
+    async def ask_brain(question: str, project: str | None = None, context: str | None = None, tier: str | None = None, allow_pro: bool = False, web_search: bool = False, async_request: bool = False, save_session: bool = False, conversation_strategy: str | None = None, session_id: str | None = None, conversation_url: str | None = None, allow_project_fallback: bool = False) -> dict[str, Any]:
+        return await runner.run("tool_ask_brain", question=question, project=project, context=context, tier=tier, allow_pro=allow_pro, web_search=web_search, async_request=async_request, save_session=save_session, conversation_strategy=conversation_strategy, session_id=session_id, conversation_url=conversation_url, allow_project_fallback=allow_project_fallback)
 
     @mcp.tool()
-    async def ask_web(question: str, project: str | None = None, context: str | None = None, tier: str | None = None, allow_pro: bool = False, save_session: bool = True, conversation_strategy: str = "reuse_project", session_id: str | None = None, conversation_url: str | None = None) -> dict[str, Any]:
-        return await runner.run("tool_ask_web", question=question, project=project, context=context, tier=tier, allow_pro=allow_pro, save_session=save_session, conversation_strategy=conversation_strategy, session_id=session_id, conversation_url=conversation_url)
+    async def ask_web(question: str, project: str | None = None, context: str | None = None, tier: str | None = None, allow_pro: bool = False, save_session: bool = False, conversation_strategy: str | None = None, session_id: str | None = None, conversation_url: str | None = None, allow_project_fallback: bool = False) -> dict[str, Any]:
+        return await runner.run("tool_ask_web", question=question, project=project, context=context, tier=tier, allow_pro=allow_pro, save_session=save_session, conversation_strategy=conversation_strategy, session_id=session_id, conversation_url=conversation_url, allow_project_fallback=allow_project_fallback)
 
     @mcp.tool()
-    async def start_research(topic: str, project: str | None = None, context: str | None = None, tier: str | None = None, allow_pro: bool = False, deep_research: bool = True, output_format: str = "report", max_runtime_hint_minutes: int = 30) -> dict[str, Any]:
-        return await runner.run("start_research", topic=topic, project=project, context=context, tier=tier, allow_pro=allow_pro, deep_research=deep_research, output_format=output_format, max_runtime_hint_minutes=max_runtime_hint_minutes)
+    async def start_research(topic: str, project: str | None = None, context: str | None = None, tier: str | None = None, allow_pro: bool = False, deep_research: bool = True, output_format: str = "report", max_runtime_hint_minutes: int = 30, allow_project_fallback: bool = False) -> dict[str, Any]:
+        return await runner.run("start_research", topic=topic, project=project, context=context, tier=tier, allow_pro=allow_pro, deep_research=deep_research, output_format=output_format, max_runtime_hint_minutes=max_runtime_hint_minutes, allow_project_fallback=allow_project_fallback)
 
     @mcp.tool()
     async def get_research_result(job_id: str) -> dict[str, Any]: return await runner.run("get_research_result", job_id)
     @mcp.tool()
+    async def get_job_result(job_id: str) -> dict[str, Any]: return await runner.run("get_job_result", job_id)
+    @mcp.tool()
     async def cancel_research_job(job_id: str) -> dict[str, str]: return await runner.run("cancel_research_job", job_id)
+    @mcp.tool()
+    async def delete_local_record(record_id: str, record_type: str = "auto", delete_artifact: bool = True) -> dict[str, Any]: return await runner.run("delete_local_record", record_id, record_type, delete_artifact)
+    @mcp.tool()
+    async def purge_project_records(project: str, include_thread: bool = False) -> dict[str, Any]: return await runner.run("purge_project_records", project, include_thread)
+    @mcp.tool()
+    async def delete_remote_conversation(conversation_url: str, confirm: bool = False) -> dict[str, Any]: return await runner.run("delete_remote_conversation", conversation_url, confirm)
     @mcp.tool()
     async def list_web_sessions(project: str | None = None, limit: int = 20) -> dict[str, Any]: return await runner.run("list_web_sessions", project, limit)
     @mcp.tool()

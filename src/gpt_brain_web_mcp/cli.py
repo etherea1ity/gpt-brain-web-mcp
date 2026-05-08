@@ -167,7 +167,7 @@ def cmd_smoke(args: argparse.Namespace) -> int:
         os.environ["GPT_BRAIN_WEB_MOCK"] = "1"
     settings = Settings.from_env()
     svc = WebBrainService(settings)
-    result = svc.tool_ask_brain(question="Reply with exactly: GPT_BRAIN_WEB_SMOKE_OK", save_session=True)
+    result = svc.tool_ask_brain(question="Reply with exactly: GPT_BRAIN_WEB_SMOKE_OK", save_session=False, conversation_strategy="new")
     ok = str(result.get("answer", "")).strip() == "GPT_BRAIN_WEB_SMOKE_OK"
     _print_json({"ok": ok, "mode": "live" if os.getenv("RUN_LIVE_CHATGPT_WEB") else "mock", "result": result})
     return 0 if ok else 1
@@ -177,6 +177,19 @@ def cmd_cleanup(args: argparse.Namespace) -> int:
     svc = WebBrainService(Settings.from_env())
     _print_json(svc.cleanup_browser())
     return 0
+
+
+def cmd_records(args: argparse.Namespace) -> int:
+    svc = WebBrainService(Settings.from_env())
+    if args.records_cmd == "list":
+        _print_json(svc.list_web_sessions(args.project, args.limit)); return 0
+    if args.records_cmd == "delete":
+        _print_json(svc.delete_local_record(args.record_id, args.record_type, not args.keep_artifact)); return 0
+    if args.records_cmd == "purge-project":
+        _print_json(svc.purge_project_records(args.project, args.include_thread)); return 0
+    if args.records_cmd == "delete-remote":
+        _print_json(svc.delete_remote_conversation(args.conversation_url, args.confirm)); return 0
+    raise SystemExit(f"unknown records command {args.records_cmd}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -222,6 +235,25 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("smoke", help="Run mock smoke unless RUN_LIVE_CHATGPT_WEB=1").set_defaults(func=cmd_smoke)
     sub.add_parser("cleanup", help="Close browser worker but preserve profile").set_defaults(func=cmd_cleanup)
+    records = sub.add_parser("records", help="List/delete local SQLite session/job records")
+    records_sub = records.add_subparsers(dest="records_cmd", required=True)
+    rlist = records_sub.add_parser("list")
+    rlist.add_argument("--project")
+    rlist.add_argument("--limit", type=int, default=20)
+    rlist.set_defaults(func=cmd_records)
+    rdel = records_sub.add_parser("delete")
+    rdel.add_argument("record_id")
+    rdel.add_argument("--record-type", choices=["auto", "session", "job"], default="auto")
+    rdel.add_argument("--keep-artifact", action="store_true")
+    rdel.set_defaults(func=cmd_records)
+    rpurge = records_sub.add_parser("purge-project")
+    rpurge.add_argument("project")
+    rpurge.add_argument("--include-thread", action="store_true", help="Also remove the local project->conversation pointer")
+    rpurge.set_defaults(func=cmd_records)
+    rremote = records_sub.add_parser("delete-remote", help="Delete an explicit ChatGPT /c/... conversation from the dedicated profile")
+    rremote.add_argument("conversation_url")
+    rremote.add_argument("--confirm", action="store_true", help="Required; confirms remote deletion in ChatGPT Web UI")
+    rremote.set_defaults(func=cmd_records)
     return p
 
 

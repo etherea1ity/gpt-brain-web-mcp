@@ -39,9 +39,9 @@ class WebChatGPTBackend(BrainBackend):
                 conv = row.get("conversation_url") if row else None
                 if not conv:
                     warnings.append(f"resume_session_id={request.resume_session_id!r} was not found or has no conversation_url; falling back to project policy.")
-                    conv = self.browser.create_or_reuse_conversation(request.project, "project", force_new=False)
+                    conv = self.browser.create_or_reuse_conversation(request.project if request.project_explicit else None, "project", force_new=False)
             else:
-                conv = self.browser.create_or_reuse_conversation(request.project, "project", force_new=force_new)
+                conv = self.browser.create_or_reuse_conversation(request.project if request.project_explicit else None, "project", force_new=force_new)
             recovery_action = None
             recovery_reason = None
             if conv and conv.startswith("https://"):
@@ -53,24 +53,45 @@ class WebChatGPTBackend(BrainBackend):
                     recovery_action = "created_new"
                     recovery_reason = "saved_conversation_unavailable"
                     self.store.add_event("conversation_recovery", f"Saved conversation unavailable for project={request.project!r}: {exc}", session_id=session_id)
-                    conv = self.browser.create_or_reuse_conversation(request.project, "project", force_new=True)
-            if conv and conv.startswith("chatgpt://local/project/") and request.project and hasattr(page, "open_project"):
+                    conv = self.browser.create_or_reuse_conversation(request.project if request.project_explicit else None, "project", force_new=True)
+            if conv and (conv.startswith("chatgpt://local/project/") or conv.startswith("chatgpt://local/job/")) and hasattr(page, "open_project"):
                 try:
-                    if not page.open_project(request.project):
-                        warnings.append(
-                            f"ChatGPT project {request.project!r} was not found in the sidebar; using the current/new chat context. "
-                            "Create that project in ChatGPT or set GPT_BRAIN_DEFAULT_PROJECT to an existing project."
-                        )
+                    project_opened = True
+                    if request.conversation_strategy == "new":
+                        project_opened = page.start_new_chat(request.project if request.project_explicit else None)
+                    elif request.project_explicit:
+                        project_opened = page.open_project(request.project)
+                    elif not request.project_explicit and request.conversation_strategy == "new":
+                        project_opened = page.start_new_chat(None)
+                    if not project_opened and request.conversation_strategy == "new" and not request.allow_project_fallback:
+                        raise NeedsUserAction("Could not start a fresh ChatGPT conversation; refusing to send into the current chat. Retry, run doctor, or pass allow_project_fallback=true if current-chat fallback is acceptable.")
+                    if request.project_explicit and not project_opened and not request.allow_project_fallback:
+                        raise NeedsUserAction(f"ChatGPT project {request.project!r} could not be opened; refusing to send into the current chat. Create/open the project or pass allow_project_fallback=true.")
+                    if not project_opened:
+                        warnings.append("Requested ChatGPT conversation/project was not opened; allow_project_fallback=true so using current chat context.")
                 except Exception as exc:
-                    warnings.append(f"Could not open ChatGPT project {request.project!r}; using current/new chat context. Reason: {exc}")
+                    if isinstance(exc, NeedsUserAction):
+                        raise
+                    if request.project_explicit and not request.allow_project_fallback:
+                        raise NeedsUserAction(f"Could not open ChatGPT project {request.project!r}; refusing to send into current chat. Reason: {exc}") from exc
+                    warnings.append(f"Could not open ChatGPT project {request.project!r}; allow_project_fallback=true so using current/new chat context. Reason: {exc}")
             selection = self.modes.select_tier(page, request.tier, request.allow_pro)
             warnings.extend(selection.warnings)
             page.conversation_url = conv
+            if request.conversation_key:
+                def _progress(event: str, detail: str) -> None:
+                    self.store.add_event(f"job_{event}", detail, job_id=request.conversation_key, session_id=session_id)
+                    if event in {"heartbeat", "refresh"}:
+                        self.store.update_job(request.conversation_key, status="waiting_for_model")
+                try:
+                    setattr(page, "progress_callback", _progress)
+                except Exception:
+                    pass
             prompt = self._render_prompt(request, web_search)
             page.submit_prompt(prompt, web_search=web_search)
             answer = redact_text(self.results.extract_answer(page))
             real_conv = getattr(page, "current_conversation_url", lambda fallback=None: fallback)(conv) or conv
-            if request.project and getattr(request, "conversation_kind", "project") == "project":
+            if request.project and request.project_explicit and getattr(request, "conversation_kind", "project") == "project":
                 self.conversations.bind_project(request.project, real_conv)
             if session_id:
                 self.conversations.bind_session(session_id, real_conv)

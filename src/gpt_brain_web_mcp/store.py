@@ -43,6 +43,7 @@ class Store:
             conn.executescript("""
             PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS browser_profiles(profile_id TEXT PRIMARY KEY, profile_path TEXT NOT NULL, login_state TEXT, headless INTEGER, last_checked_at TEXT, created_at TEXT, updated_at TEXT, notes TEXT);
+            CREATE TABLE IF NOT EXISTS project_threads(project TEXT PRIMARY KEY, conversation_url TEXT, title TEXT, created_at TEXT, updated_at TEXT);
             CREATE TABLE IF NOT EXISTS web_sessions(session_id TEXT PRIMARY KEY, project TEXT, conversation_url TEXT, title TEXT, requested_tier TEXT, resolved_tier TEXT, created_at TEXT, updated_at TEXT, summary TEXT);
             CREATE TABLE IF NOT EXISTS messages(message_id TEXT PRIMARY KEY, session_id TEXT, role TEXT, content_redacted TEXT, created_at TEXT);
             CREATE TABLE IF NOT EXISTS jobs(job_id TEXT PRIMARY KEY, project TEXT, kind TEXT, requested_tier TEXT, resolved_tier TEXT, requested_research_mode TEXT, resolved_research_mode TEXT, status TEXT, conversation_url TEXT, artifact_path TEXT, result_redacted TEXT, error_redacted TEXT, created_at TEXT, updated_at TEXT, warnings_json TEXT, sources_json TEXT);
@@ -94,16 +95,18 @@ class Store:
         return mid
 
     def set_project_conversation(self, project: str, conversation_url: str, title: str | None = None) -> str:
-        existing = self.find_project_session(project)
-        if existing:
-            self.update_session(existing["session_id"], conversation_url=conversation_url, title=title)
-            return existing["session_id"]
-        return self.create_session(project, "thinking_heavy", conversation_url=conversation_url, title=title)
+        ts = now()
+        with self.connect() as conn:
+            conn.execute("""INSERT INTO project_threads(project, conversation_url, title, created_at, updated_at)
+            VALUES(?, ?, ?, ?, ?)
+            ON CONFLICT(project) DO UPDATE SET conversation_url=excluded.conversation_url, title=excluded.title, updated_at=excluded.updated_at""",
+            (redact_text(project), conversation_url, redact_text(title), ts, ts))
+        return project
 
     def find_project_session(self, project: str | None) -> dict[str, Any] | None:
         if not project: return None
         with self.connect() as conn:
-            row = conn.execute("SELECT * FROM web_sessions WHERE project=? ORDER BY updated_at DESC LIMIT 1", (redact_text(project),)).fetchone()
+            row = conn.execute("SELECT project, conversation_url, title, created_at, updated_at FROM project_threads WHERE project=?", (redact_text(project),)).fetchone()
         return dict(row) if row else None
 
     def get_session(self, session_id: str) -> dict[str, Any] | None:
@@ -160,3 +163,43 @@ class Store:
             conn.execute("INSERT INTO browser_events(event_id, job_id, session_id, event_type, detail_redacted, screenshot_path_optional, created_at) VALUES(?, ?, ?, ?, ?, ?, ?)",
                          (eid, job_id, session_id, event_type, redact_text(detail), screenshot, now()))
         return eid
+
+    def delete_session(self, session_id: str) -> bool:
+        with self.connect() as conn:
+            row = conn.execute("SELECT session_id FROM web_sessions WHERE session_id=?", (session_id,)).fetchone()
+            if not row:
+                return False
+            conn.execute("DELETE FROM messages WHERE session_id=?", (session_id,))
+            conn.execute("DELETE FROM browser_events WHERE session_id=?", (session_id,))
+            conn.execute("DELETE FROM web_sessions WHERE session_id=?", (session_id,))
+        return True
+
+    def purge_project_records(self, project: str, include_thread: bool = False) -> dict[str, int]:
+        project = redact_text(project)
+        with self.connect() as conn:
+            session_ids = [r["session_id"] for r in conn.execute("SELECT session_id FROM web_sessions WHERE project=?", (project,)).fetchall()]
+            job_ids = [r["job_id"] for r in conn.execute("SELECT job_id FROM jobs WHERE project=?", (project,)).fetchall()]
+            for sid in session_ids:
+                conn.execute("DELETE FROM messages WHERE session_id=?", (sid,))
+                conn.execute("DELETE FROM browser_events WHERE session_id=?", (sid,))
+            for jid in job_ids:
+                conn.execute("DELETE FROM browser_events WHERE job_id=?", (jid,))
+                conn.execute("DELETE FROM backend_runs WHERE job_id=?", (jid,))
+            conn.execute("DELETE FROM web_sessions WHERE project=?", (project,))
+            conn.execute("DELETE FROM jobs WHERE project=?", (project,))
+            threads = 0
+            if include_thread:
+                cur = conn.execute("DELETE FROM project_threads WHERE project=?", (project,))
+                threads = cur.rowcount if cur.rowcount is not None else 0
+        return {"sessions": len(session_ids), "jobs": len(job_ids), "project_threads": threads}
+
+    def delete_job(self, job_id: str) -> dict[str, Any]:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
+            if not row:
+                return {"deleted": False, "artifact_path": None}
+            artifact_path = dict(row).get("artifact_path")
+            conn.execute("DELETE FROM browser_events WHERE job_id=?", (job_id,))
+            conn.execute("DELETE FROM backend_runs WHERE job_id=?", (job_id,))
+            conn.execute("DELETE FROM jobs WHERE job_id=?", (job_id,))
+        return {"deleted": True, "artifact_path": artifact_path}

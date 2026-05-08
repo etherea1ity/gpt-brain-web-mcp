@@ -89,3 +89,22 @@ Backups are created as `~/.codex/config.toml.bak.<timestamp>`. Restore the backu
 gpt-brain-web mcp install-codex --dry-run
 gpt-brain-web mcp install-codex
 ```
+
+
+## Explicit project fails closed
+
+If a request includes `project="..."` and the ChatGPT Project cannot be opened from the dedicated sidebar, the tool refuses to send into the current chat by default. Create/open the project in ChatGPT, update the project name, or explicitly pass `allow_project_fallback=true` when current-chat fallback is acceptable.
+
+## Job stays `waiting_for_model`
+
+Long jobs emit heartbeat events while ChatGPT is thinking. If no progress is observed, the adapter refreshes once after `GPT_BRAIN_STALE_REFRESH_SECONDS` (default 240s). If the status does not change after the configured timeout, run `gpt-brain-web doctor --verbose` and inspect local records with `gpt-brain-web records list`.
+
+## Remote cleanup
+
+Use `gpt-brain-web records delete <job_id>` for local SQLite cleanup. To delete a ChatGPT web conversation, pass the exact `/c/...` URL and `--confirm`:
+
+```bash
+gpt-brain-web records delete-remote https://chatgpt.com/c/... --confirm
+```
+
+The tool will not delete remote conversations without an explicit URL and confirmation.

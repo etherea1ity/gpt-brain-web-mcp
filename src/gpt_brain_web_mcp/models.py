@@ -27,10 +27,12 @@ class BrainRequest:
     allow_pro: bool = False
     web_search: bool = False
     async_request: bool = False
-    save_session: bool = True
+    save_session: bool = False
     conversation_kind: str = "project"
     conversation_key: str | None = None
     conversation_strategy: str = "reuse_project"
+    project_explicit: bool = False
+    allow_project_fallback: bool = False
     resume_session_id: str | None = None
     resume_conversation_url: str | None = None
 

@@ -23,3 +23,23 @@ def test_cli_smoke_live_mode_is_explicit(monkeypatch, tmp_path, capsys):
     assert main(["smoke"]) == 0
     out = capsys.readouterr().out
     assert '"mode": "live"' in out
+
+
+def test_cli_records_delete(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("GPT_BRAIN_WEB_MOCK", "1")
+    monkeypatch.setenv("GPT_BRAIN_HOME", str(tmp_path / "home"))
+    from gpt_brain_web_mcp.tools import WebBrainService
+    from gpt_brain_web_mcp.config import Settings
+    svc = WebBrainService(Settings.from_env())
+    row = svc.tool_ask_brain(question="x", save_session=True)
+    assert main(["records", "delete", row["session_id"]]) == 0
+    out = capsys.readouterr().out
+    assert '"deleted": true' in out
+
+
+def test_cli_records_delete_remote_requires_confirm(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("GPT_BRAIN_WEB_MOCK", "1")
+    monkeypatch.setenv("GPT_BRAIN_HOME", str(tmp_path / "home"))
+    assert main(["records", "delete-remote", "https://chatgpt.com/c/abc"]) == 0
+    out = capsys.readouterr().out
+    assert '"confirm=true is required"' in out

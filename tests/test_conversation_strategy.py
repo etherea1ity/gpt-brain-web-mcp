@@ -2,15 +2,14 @@ from gpt_brain_web_mcp.config import Settings
 from gpt_brain_web_mcp.tools import WebBrainService
 
 
-def test_omitted_project_uses_default_big_project(tmp_path):
+def test_omitted_project_uses_default_project_but_new_thread_by_default(tmp_path):
     svc = WebBrainService(Settings(home=tmp_path, mock_browser=True, default_project="Codex Brain"))
     a = svc.tool_ask_brain(question="a")
     b = svc.tool_ask_brain(question="b")
     assert a["project"] == "Codex Brain"
     assert b["project"] == "Codex Brain"
-    assert a["conversation_url"] == b["conversation_url"]
-    listed = svc.list_web_sessions("Codex Brain")
-    assert listed["sessions"]
+    assert a["conversation_url"] != b["conversation_url"]
+    assert a["conversation_strategy"] == "new"
 
 
 def test_named_projects_do_not_share_conversation(tmp_path):

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import time
 from dataclasses import dataclass, field
 from ..models import NeedsUserAction
 
@@ -24,6 +26,17 @@ class MockChatGPTPage:
     def ensure_logged_in(self) -> None:
         if not self.logged_in:
             raise NeedsUserAction("ChatGPT login required; run `gpt-brain-web login`.")
+
+    def open_project(self, project_name: str) -> bool:
+        return bool(project_name)
+
+    def start_new_chat(self, project_name: str | None = None) -> bool:
+        self.conversation_url = None
+        return True
+
+    def delete_current_conversation(self) -> bool:
+        self.conversation_url = None
+        return True
 
     def submit_prompt(self, prompt: str, *, web_search: bool = False) -> None:
         self.ensure_logged_in()
@@ -134,6 +147,16 @@ class ChatGPTPage:
             if target is None:
                 return False
             if effort_label:
+                target_text = ""
+                try:
+                    target_text = target.inner_text(timeout=1000)
+                except Exception:
+                    pass
+                if effort_label.lower() in target_text.lower():
+                    target.click(timeout=3000)
+                    self.page.wait_for_timeout(500)
+                    self.selected_tier = f"{model_label} {effort_label}"
+                    return True
                 effort_button = target.locator('[aria-label="Effort"], [data-model-picker-thinking-effort-action="true"]').last
                 if effort_button.count() > 0:
                     effort_button.click(timeout=3000)
@@ -149,7 +172,9 @@ class ChatGPTPage:
                                 return True
                         except Exception:
                             continue
-                # Fall back to selecting the model row if the effort submenu is absent.
+                # Do not pretend a requested Standard/Extended/Heavy effort was selected
+                # when ChatGPT did not expose that effort control.
+                return False
             target.click(timeout=3000)
             self.page.wait_for_timeout(500)
             self.selected_tier = model_label if not effort_label else f"{model_label} {effort_label}"
@@ -216,6 +241,69 @@ class ChatGPTPage:
         if self._click_project_text(name):
             return True
         return False
+
+    def start_new_chat(self, project_name: str | None = None) -> bool:
+        """Start a real new ChatGPT composer before sending.
+
+        For explicit projects, opening the project landing page gives a project
+        scoped composer. For global/implicit use, click New chat and verify the
+        prompt box is available. This is used by `conversation_strategy=new`.
+        """
+        if project_name:
+            return self.open_project(project_name) and self.is_prompt_box_available()
+        for label in ["New chat", "Start new chat"]:
+            try:
+                self.page.get_by_text(label, exact=True).last.click(timeout=2000)
+                self.page.wait_for_timeout(800)
+                return self.is_prompt_box_available()
+            except Exception:
+                continue
+            try:
+                self.page.get_by_role("link", name=label).last.click(timeout=2000)
+                self.page.wait_for_timeout(800)
+                return self.is_prompt_box_available()
+            except Exception:
+                continue
+        # Direct navigation to the ChatGPT root is a stable way to request a
+        # fresh global composer when the sidebar New chat control is not visible
+        # in the current responsive layout.
+        try:
+            self.page.goto("https://chatgpt.com/", wait_until="domcontentloaded", timeout=15000)
+            self.page.wait_for_timeout(1000)
+            if self.is_prompt_box_available() and "/c/" not in str(self.page.url):
+                return True
+        except Exception:
+            pass
+        # If already on an empty composer, consider it usable but not a confirmed
+        # navigation.
+        try:
+            if "/c/" not in str(self.page.url) and self.is_prompt_box_available():
+                return True
+        except Exception:
+            pass
+        return False
+
+    def delete_current_conversation(self) -> bool:
+        """Delete the currently open ChatGPT conversation via explicit UI controls.
+
+        This should only be called for a caller-supplied conversation URL with a
+        separate confirmation flag. It intentionally targets the conversation
+        header's "Open conversation options" menu instead of project/sidebar
+        option buttons.
+        """
+        try:
+            self.page.get_by_label("Open conversation options").last.click(timeout=3000)
+            self.page.wait_for_timeout(500)
+            self.page.get_by_text("Delete", exact=True).last.click(timeout=3000)
+            self.page.wait_for_timeout(500)
+            self.page.locator("button").filter(has_text="Delete").last.click(timeout=3000)
+            self.page.wait_for_timeout(2000)
+            try:
+                return "/c/" not in str(self.page.url)
+            except Exception:
+                return True
+        except Exception:
+            return False
 
     def _ensure_sidebar_visible(self) -> None:
         # In normal desktop widths the sidebar is already visible. The buttons
@@ -353,11 +441,14 @@ class ChatGPTPage:
                 self.page.wait_for_function(
                     "(before) => document.querySelectorAll('[data-message-author-role=\"user\"]').length > before",
                     arg=before_user,
-                    timeout=3000,
+                    timeout=12000,
                 )
             except Exception:
-                # Some ChatGPT builds do not expose the user message immediately; press Enter as fallback.
-                self.page.keyboard.press("Enter")
+                # Do not submit again: slow DOM/network can hide a successful
+                # click for several seconds, and a second Enter duplicates the
+                # prompt. If generation/assistant output cannot be observed
+                # later, the wait path will fail clearly.
+                pass
         self._wait_for_assistant_after(before, before_text)
         self.last_answer = self._latest_assistant_text()
         self.sources = self._extract_sources_from_dom()
@@ -444,12 +535,27 @@ class ChatGPTPage:
             self.page.wait_for_timeout(3000)
         last = ""
         stable = 0
-        for _ in range(150):
+        timeout_s = max(30, int(os.getenv("GPT_BRAIN_RESPONSE_TIMEOUT_SECONDS", "600")))
+        stale_refresh_s = int(os.getenv("GPT_BRAIN_STALE_REFRESH_SECONDS", "240"))
+        heartbeat_s = max(5, int(os.getenv("GPT_BRAIN_HEARTBEAT_SECONDS", "20")))
+        deadline = time.time() + timeout_s
+        last_change = time.time()
+        last_heartbeat = 0.0
+        refreshed = False
+        callback = getattr(self, "progress_callback", None)
+        while time.time() < deadline:
             cur = self._latest_assistant_text().strip()
             low = cur.lower()
             future_preamble = low.startswith(("i'll ", "i’ll ", "i will ")) and any(word in low[:120] for word in ("verify", "search", "research", "ground", "check"))
             transient = (not cur) or cur == before_text or future_preamble or low in {"thinking", "typing"} or low.startswith("thinking") or low.startswith("thought for")
             running = self._is_generation_running()
+            now = time.time()
+            if callback and now - last_heartbeat >= heartbeat_s:
+                try:
+                    callback("heartbeat", cur[-500:] if cur else "waiting for ChatGPT response")
+                except Exception:
+                    pass
+                last_heartbeat = now
             if transient:
                 stable = 0
             elif running:
@@ -460,8 +566,24 @@ class ChatGPTPage:
                 if stable >= 4:
                     return
             else:
-                stable = 0; last = cur
+                stable = 0; last = cur; last_change = now
+            if stale_refresh_s > 0 and not refreshed and not running and now - last_change >= stale_refresh_s:
+                if callback:
+                    try:
+                        callback("refresh", f"No visible answer progress for {stale_refresh_s}s; refreshing ChatGPT page once.")
+                    except Exception:
+                        pass
+                try:
+                    self.page.reload(wait_until="domcontentloaded", timeout=30000)
+                    self.page.wait_for_timeout(3000)
+                    refreshed = True
+                    last_change = time.time()
+                    last = self._latest_assistant_text().strip()
+                    stable = 0
+                except Exception:
+                    refreshed = True
             self.page.wait_for_timeout(1000)
+        raise TimeoutError(f"Timed out waiting for ChatGPT response after {timeout_s}s")
 
     def _is_generation_running(self) -> bool:
         """Best-effort generation-state check.

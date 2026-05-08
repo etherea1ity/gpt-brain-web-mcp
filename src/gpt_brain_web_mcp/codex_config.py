@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 def block(python_path: str, home: str, headless: bool = True, default_project: str = "Codex Brain") -> str:
-    env = f'{{ "GPT_BRAIN_BACKEND" = "web-chatgpt", "GPT_BRAIN_DEFAULT_TIER" = "thinking_heavy", "GPT_BRAIN_ALLOW_PRO_DEFAULT" = "false", "GPT_BRAIN_DEFAULT_PROJECT" = "{default_project}", "GPT_BRAIN_CONVERSATION_POLICY" = "reuse_project", "GPT_BRAIN_BROWSER_HEADLESS" = "{str(headless).lower()}", "GPT_BRAIN_HOME" = "{home}" }}'
+    env = f'{{ "GPT_BRAIN_BACKEND" = "web-chatgpt", "GPT_BRAIN_DEFAULT_TIER" = "thinking_heavy", "GPT_BRAIN_ALLOW_PRO_DEFAULT" = "false", "GPT_BRAIN_SAVE_SESSION_DEFAULT" = "false", "GPT_BRAIN_DEFAULT_PROJECT" = "{default_project}", "GPT_BRAIN_CONVERSATION_POLICY" = "reuse_project", "GPT_BRAIN_MAX_BROWSER_JOBS" = "1", "GPT_BRAIN_BROWSER_HEADLESS" = "{str(headless).lower()}", "GPT_BRAIN_HOME" = "{home}" }}'
     return f'[mcp_servers.gpt-brain-web]\ncommand = "{python_path}"\nargs = ["-m", "gpt_brain_web_mcp.server"]\nenv = {env}\n'
 
 

@@ -28,3 +28,17 @@ Uninstall the MCP config while preserving the login profile:
 ```bash
 ./install.sh --uninstall
 ```
+
+
+After live validation, clean local test records when needed:
+
+```bash
+gpt-brain-web records list
+gpt-brain-web records delete <job_id_or_session_id>
+```
+
+Remote ChatGPT cleanup is explicit and guarded:
+
+```bash
+gpt-brain-web records delete-remote https://chatgpt.com/c/... --confirm
+```

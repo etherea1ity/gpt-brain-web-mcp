@@ -37,7 +37,7 @@ In WSL, if Linux Chromium cannot launch because host libraries are missing, the 
 
 ### Conversation manager
 
-`web/conversation_manager.py` and `Store` persist project/session/job mappings to `conversation_url`. A local placeholder is used before the first message; after ChatGPT assigns a real `https://chatgpt.com/c/...` URL, it is captured and stored. Project asks default to `GPT_BRAIN_DEFAULT_PROJECT` (`Codex Brain`) when the MCP caller omits `project`, then navigate back to that project's latest real conversation when available. `conversation_strategy` controls reuse (`reuse_project`), fresh thread creation (`new`), and explicit resume (`resume_session` / `resume_url`). Research jobs always use isolated job conversations.
+`web/conversation_manager.py` and `Store` persist project/session/job mappings to `conversation_url`. A local placeholder is used before the first message; after ChatGPT assigns a real `https://chatgpt.com/c/...` URL, it is captured and stored. When the MCP caller omits `project`, results are labeled with `GPT_BRAIN_DEFAULT_PROJECT` (`Codex Brain`) but the browser starts a fresh global/new chat by default and does not bind that implicit label as a reusable project pointer. Explicit `project` is the only project reuse key. `conversation_strategy` controls reuse (`reuse_project` for explicit projects), fresh thread creation (`new`), and explicit resume (`resume_session` / `resume_url`). Ask jobs and research jobs can run asynchronously and use isolated job conversations.
 
 ### Job queue
 
@@ -45,7 +45,7 @@ In WSL, if Linux Chromium cannot launch because host libraries are missing, the 
 
 ### Storage
 
-SQLite tables: `browser_profiles`, `web_sessions`, `messages`, `jobs`, `browser_events`, `backend_runs`, and `settings`.
+SQLite tables: `browser_profiles`, `project_threads`, `web_sessions`, `messages`, `jobs`, `browser_events`, `backend_runs`, and `settings`. `project_threads` stores explicit project -> latest conversation pointers separately from local audit sessions.
 
 ### UI adapters
 
@@ -58,4 +58,13 @@ Playwright selectors are centralized in `config/selectors.yaml`. Model labels ar
 
 ### Real ChatGPT Project navigation
 
-`ChatGPTPage.open_project()` opens existing ChatGPT Projects from the dedicated profile sidebar. It handles the compact sidebar state by expanding `More` and then `Projects`, then clicking the project row. This is intentionally not a project-creation API: missing projects produce warnings and the request continues in the current/new chat context. The composer is located by role/textbox and CSS fallbacks each time, so the input box moving downward inside a project or Deep Research mode is handled by locator lookup rather than fixed coordinates.
+`ChatGPTPage.open_project()` opens existing ChatGPT Projects from the dedicated profile sidebar. It handles the compact sidebar state by expanding `More` and then `Projects`, then clicking the project row. This is intentionally not a project-creation API: missing explicit projects fail closed unless the caller sets `allow_project_fallback=true`. The composer is located by role/textbox and CSS fallbacks each time, so the input box moving downward inside a project or Deep Research mode is handled by locator lookup rather than fixed coordinates. `conversation_strategy=new` calls the page-level new-chat/project-composer flow before prompt submission, not just a local placeholder.
+
+
+### Async workflow heartbeat
+
+`ask_brain(async_request=true)` and `start_research` return quickly with a job id. While waiting for ChatGPT output, `ChatGPTPage` records heartbeat browser events and marks jobs as `waiting_for_model`. If no progress is observed for `GPT_BRAIN_STALE_REFRESH_SECONDS`, it performs one refresh/recovery attempt instead of abandoning the workflow. `GPT_BRAIN_MAX_BROWSER_JOBS` defaults to `1` so the dedicated profile is serialized by default and does not attempt to bypass account limits.
+
+### Local and remote cleanup
+
+Local records can be deleted with `delete_local_record` / `gpt-brain-web records delete`. Project audit data can be purged with `purge_project_records`. Remote ChatGPT conversation deletion is deliberately guarded: `delete_remote_conversation` only accepts explicit `https://chatgpt.com/c/...` URLs and requires confirmation.
