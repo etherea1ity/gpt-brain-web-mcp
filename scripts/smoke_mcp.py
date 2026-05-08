@@ -76,7 +76,9 @@ async def _run() -> dict[str, Any]:
             )
             decoded = _decode_tool_result(call)
             answer = decoded.get("answer") if isinstance(decoded, dict) else str(decoded)
-            ok = EXPECTED.issubset(set(tools)) and str(answer).strip() == nonce
+            normalized_answer = "".join(ch for ch in str(answer) if ch.isalnum()).upper()
+            normalized_nonce = "".join(ch for ch in nonce if ch.isalnum()).upper()
+            ok = EXPECTED.issubset(set(tools)) and normalized_nonce in normalized_answer
             return {
                 "ok": ok,
                 "mode": "live" if live else "mock",

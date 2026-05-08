@@ -500,7 +500,10 @@ class ChatGPTPage:
                     return loc.last.inner_text(timeout=5000).strip()
             except Exception:
                 continue
-        return self.page.locator("body").inner_text(timeout=5000)[-5000:]
+        # Do not fall back to the full page body here: during Deep Research or
+        # failed submits the body contains sidebars, prompt text, and controls,
+        # which can look stable and be mistaken for a completed answer.
+        return ""
 
     def _extract_sources_from_dom(self) -> list[dict]:
         out, seen = [], set()

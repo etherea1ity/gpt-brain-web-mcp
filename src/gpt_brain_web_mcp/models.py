@@ -35,6 +35,7 @@ class BrainRequest:
     allow_project_fallback: bool = False
     resume_session_id: str | None = None
     resume_conversation_url: str | None = None
+    requested_research_mode: str | None = None
 
 
 @dataclass(slots=True)

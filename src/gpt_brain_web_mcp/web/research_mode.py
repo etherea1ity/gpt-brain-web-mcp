@@ -14,8 +14,11 @@ class ResearchModeManager:
         return bool(getattr(page, "deep_research_available", False))
 
     def resolve_mode(self, page, requested_deep: bool) -> tuple[str, list[str]]:
-        if requested_deep and self.detect_deep_research(page) and self.enable_deep_research(page):
-            return "deep_research", []
+        # The Deep Research option is normally hidden behind the composer + menu,
+        # so detection must try to open/enable it rather than only scanning the
+        # closed page body.
         if requested_deep:
+            if self.enable_deep_research(page):
+                return "deep_research", []
             return "web_research_prompt", ["Deep Research UI not available; used web research fallback."]
         return "web_research_prompt", []

@@ -56,7 +56,14 @@ def main() -> int:
         "i'll ground", "i’ll ground", "i will ground",
         "i'll research", "i’ll research", "i will research",
     )
-    research_ok = bool(result and result.get("status") == "completed" and research_text and not research_text.lower().startswith(incomplete_prefixes))
+    bogus_markers = ("chat history", "new chat", "search chats", "chatgpt can make mistakes", "use chatgpt web/search capability", "error in message stream", "something went wrong")
+    research_ok = bool(
+        result
+        and result.get("status") == "completed"
+        and research_text
+        and not research_text.lower().startswith(incomplete_prefixes)
+        and not any(marker in research_text.lower()[:1200] for marker in bogus_markers)
+    )
     report["steps"].append({"name": "start_research", "ok": research_ok, "started": started, "result": result})
     report["ok"] = all(step.get("ok") for step in report["steps"] if step.get("name") != "research_status")
     for rid in cleanup_ids:

@@ -9,7 +9,6 @@ from typing import Any
 from .models import BrainRequest, JobStartResult
 from .redaction import redact_text
 from .store import Store, now
-from .web.research_mode import ResearchModeManager
 
 class JobManager:
     def __init__(self, service, store: Store, artifact_dir: str | Path):
@@ -143,11 +142,10 @@ class JobManager:
             try:
                 if self._is_cancelled(jid):
                     self.store.update_job(jid, status="cancelled"); return
-                page = browser.acquire_page(jid)
-                resolved_mode, warnings = ResearchModeManager().resolve_mode(page, deep_research)
-                browser.release_page(jid)
+                requested_mode = "deep_research" if deep_research else "web_research_prompt"
+                warnings: list[str] = []
                 if self._is_cancelled(jid):
-                    self.store.update_job(jid, status="cancelled", resolved_research_mode=resolved_mode, warnings_json=warnings); return
+                    self.store.update_job(jid, status="cancelled", resolved_research_mode=requested_mode, warnings_json=warnings); return
                 prompt = (
                     f"Research topic: {topic}\n"
                     f"Output format: {output_format}\n"
@@ -155,10 +153,19 @@ class JobManager:
                     "Return the final answer directly now. Do not narrate that you will verify, search, or research later.\n"
                     "Include executive summary, evidence table when useful, recommendation, risks/unknowns, sources, and next steps."
                 )
-                req = BrainRequest(question=prompt, project=project, context=context, tier=tier, allow_pro=allow_pro, web_search=True, save_session=False, conversation_kind="job", conversation_key=jid, conversation_strategy="new", project_explicit=project_explicit, allow_project_fallback=allow_project_fallback)
-                res = WebChatGPTBackend(self.service.settings, self.store, browser).ask_web(req, None)
+                req = BrainRequest(question=prompt, project=project, context=context, tier=tier, allow_pro=allow_pro, web_search=True, save_session=False, conversation_kind="job", conversation_key=jid, conversation_strategy="new", project_explicit=project_explicit, allow_project_fallback=allow_project_fallback, requested_research_mode=requested_mode)
+                try:
+                    res = WebChatGPTBackend(self.service.settings, self.store, browser).ask_web(req, None)
+                except TimeoutError:
+                    if requested_mode != "deep_research":
+                        raise
+                    warnings.append("Deep Research did not complete before timeout; used web research fallback.")
+                    res, browser = self._run_web_research_fallback(browser, jid, prompt, project, context, tier, allow_pro, project_explicit, allow_project_fallback, BrowserSessionManager, WebChatGPTBackend)
+                if requested_mode == "deep_research" and self._bad_research_answer(getattr(res, "answer", "")):
+                    warnings.append("Deep Research returned no usable final answer; used web research fallback.")
+                    res, browser = self._run_web_research_fallback(browser, jid, prompt, project, context, tier, allow_pro, project_explicit, allow_project_fallback, BrowserSessionManager, WebChatGPTBackend)
                 if self._is_cancelled(jid):
-                    self.store.update_job(jid, status="cancelled", resolved_tier=res.resolved_tier, resolved_research_mode=resolved_mode, conversation_url=res.conversation_url, warnings_json=res.warnings + warnings, sources_json=res.sources)
+                    self.store.update_job(jid, status="cancelled", resolved_tier=res.resolved_tier, resolved_research_mode=res.resolved_research_mode or requested_mode, conversation_url=res.conversation_url, warnings_json=res.warnings + warnings, sources_json=res.sources)
                     return
             finally:
                 browser.stop_browser()
@@ -166,10 +173,10 @@ class JobManager:
                     self.worker_browsers.pop(jid, None)
             all_warnings = res.warnings + warnings
             if not res.answer and any("login" in w.lower() or "prompt box" in w.lower() for w in all_warnings):
-                self.store.update_job(jid, status="needs_user_action", resolved_tier=res.resolved_tier, resolved_research_mode=resolved_mode, conversation_url=res.conversation_url, error_redacted="ChatGPT requires user action", warnings_json=all_warnings, sources_json=res.sources)
+                self.store.update_job(jid, status="needs_user_action", resolved_tier=res.resolved_tier, resolved_research_mode=res.resolved_research_mode or requested_mode, conversation_url=res.conversation_url, error_redacted="ChatGPT requires user action", warnings_json=all_warnings, sources_json=res.sources)
                 return
             artifact = self._write_artifact(jid, topic, res.answer, res.sources, all_warnings)
-            self.store.update_job(jid, status="completed", resolved_tier=res.resolved_tier, resolved_research_mode=resolved_mode, conversation_url=res.conversation_url, artifact_path=str(artifact), result_redacted=res.answer, warnings_json=all_warnings, sources_json=res.sources)
+            self.store.update_job(jid, status="completed", resolved_tier=res.resolved_tier, resolved_research_mode=res.resolved_research_mode or requested_mode, conversation_url=res.conversation_url, artifact_path=str(artifact), result_redacted=res.answer, warnings_json=all_warnings, sources_json=res.sources)
         except Exception as exc:
             if self._is_cancelled(jid):
                 self.store.update_job(jid, status="cancelled")
@@ -178,6 +185,24 @@ class JobManager:
         finally:
             with self.lock:
                 self.futures.pop(jid, None)
+
+    def _bad_research_answer(self, text: str) -> bool:
+        low = (text or "").strip().lower()
+        if not low:
+            return True
+        bad_prefixes = ("error in message stream", "retry", "something went wrong")
+        return low.startswith(bad_prefixes) or low in {"error", "retry"}
+
+    def _run_web_research_fallback(self, browser, jid: str, prompt: str, project: str | None, context: str | None, tier: str, allow_pro: bool, project_explicit: bool, allow_project_fallback: bool, BrowserSessionManager, WebChatGPTBackend):
+        try:
+            browser.stop_browser()
+        except Exception:
+            pass
+        browser = BrowserSessionManager(self.service.settings, self.store)
+        with self.lock:
+            self.worker_browsers[jid] = browser
+        fallback_req = BrainRequest(question=prompt, project=project, context=context, tier=tier, allow_pro=allow_pro, web_search=True, save_session=False, conversation_kind="job", conversation_key=jid, conversation_strategy="new", project_explicit=project_explicit, allow_project_fallback=allow_project_fallback, requested_research_mode="web_research_prompt")
+        return WebChatGPTBackend(self.service.settings, self.store, browser).ask_web(fallback_req, None), browser
 
     def _write_artifact(self, jid: str, topic: str, answer: str, sources: list[dict[str, Any]], warnings: list[str]) -> Path:
         path = self.artifact_dir / f"{jid}.md"

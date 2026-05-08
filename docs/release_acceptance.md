@@ -17,7 +17,7 @@ Date: 2026-05-09 (Asia/Shanghai workspace)
 
 ```bash
 python3 -m pytest -q
-# 47 passed, live-gated tests skipped unless RUN_LIVE_CHATGPT_WEB=1
+# 49 passed, live-gated tests skipped unless RUN_LIVE_CHATGPT_WEB=1
 
 PYTHONPATH=src python3 scripts/smoke_mcp.py
 # ok=true, mode=mock, MCP stdio listed tools and called ask_brain
@@ -50,9 +50,9 @@ RUN_LIVE_CHATGPT_WEB=1 GPT_BRAIN_WEB_MOCK=0 GPT_BRAIN_BROWSER_VISIBLE=true PYTHO
 
 Live validation evidence from the final run:
 
-- `ask_brain`: returned `GPT_BRAIN_WEB_LIVE_OK`, resolved tier `thinking_heavy`, new conversation `https://chatgpt.com/c/69fe131d-9cb0-832a-9672-2467850ba693`.
-- `ask_web`: returned source URLs including `https://www.calendarr.com/united-states/` and `https://www.calendardate.com/todays.htm`, new conversation `https://chatgpt.com/c/69fe1333-89d0-8333-9490-1c2783ea5a36`.
-- `start_research`: job `job_3c04472eaf2b42069c7a4ef488596eea` progressed `queued -> running -> waiting_for_model -> completed`; conversation `https://chatgpt.com/c/69fe1363-0e14-8325-a75c-72037307997f`; resolved research mode `web_research_prompt` with explicit warning because Deep Research UI was not selected/detected in that run.
+- `ask_brain`: returned `GPT_BRAIN_WEB_LIVE_OK`, resolved tier `thinking_heavy`, new conversation `https://chatgpt.com/c/69fe1afc-22c8-8333-8a94-c59e21424775`.
+- `ask_web`: returned source URL `https://howlongagogo.com/date/2026/may/9`, new conversation `https://chatgpt.com/c/69fe1b10-b42c-8332-8e50-0c8abeab7e52`.
+- `start_research`: job `job_556451792cd34382b3452525d8c34437` progressed `queued -> running -> waiting_for_model -> completed`; conversation `https://chatgpt.com/c/69fe1bf4-db84-8330-b026-d6b7b68f2622`; Deep Research was requested, the UI path was attempted, and the workflow honestly fell back to `web_research_prompt` after Deep Research did not complete before timeout. The fallback returned sources and the validation script deleted the local job/artifact after success.
 - Local research job record and artifact were deleted by the validation script after success.
 
 ## Known limits

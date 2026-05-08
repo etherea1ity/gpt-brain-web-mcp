@@ -8,6 +8,7 @@ from ..web.browser_manager import BrowserSessionManager
 from ..web.conversation_manager import ConversationManager
 from ..web.model_picker import ModelModeManager
 from ..web.result_extractor import ResultExtractor
+from ..web.research_mode import ResearchModeManager
 from ..web.source_extractor import SourceExtractor
 from .base import BrainBackend
 
@@ -77,6 +78,12 @@ class WebChatGPTBackend(BrainBackend):
                     warnings.append(f"Could not open ChatGPT project {request.project!r}; allow_project_fallback=true so using current/new chat context. Reason: {exc}")
             selection = self.modes.select_tier(page, request.tier, request.allow_pro)
             warnings.extend(selection.warnings)
+            resolved_research_mode = request.requested_research_mode
+            if request.requested_research_mode == "deep_research":
+                resolved_research_mode, research_warnings = ResearchModeManager().resolve_mode(page, True)
+                warnings.extend(research_warnings)
+            elif request.requested_research_mode:
+                resolved_research_mode = request.requested_research_mode
             page.conversation_url = conv
             if request.conversation_key:
                 def _progress(event: str, detail: str) -> None:
@@ -100,7 +107,12 @@ class WebChatGPTBackend(BrainBackend):
             sources = self.sources.extract_sources(page if web_search else answer)
             if web_search and not sources:
                 warnings.append("Web Search requested but no sources/citations were detected.")
-            return BrainResult(answer=answer, backend=self.name, requested_tier=request.tier, resolved_tier=selection.resolved_tier, fallback_chain=selection.fallback_chain, session_id=session_id, conversation_url=real_conv, warnings=warnings, sources=sources, project=request.project, conversation_strategy=request.conversation_strategy, recovery_action=recovery_action, recovery_reason=recovery_reason)
+            if request.requested_research_mode == "deep_research" and hasattr(page, "disable_deep_research"):
+                try:
+                    page.disable_deep_research()
+                except Exception:
+                    pass
+            return BrainResult(answer=answer, backend=self.name, requested_tier=request.tier, resolved_tier=selection.resolved_tier, fallback_chain=selection.fallback_chain, session_id=session_id, conversation_url=real_conv, warnings=warnings, sources=sources, requested_research_mode=request.requested_research_mode, resolved_research_mode=resolved_research_mode, project=request.project, conversation_strategy=request.conversation_strategy, recovery_action=recovery_action, recovery_reason=recovery_reason)
         except NeedsUserAction as exc:
             return BrainResult(answer="", backend=self.name, requested_tier=request.tier, resolved_tier="", fallback_chain=seq, session_id=session_id, warnings=[*warnings, str(exc)], project=request.project, conversation_strategy=request.conversation_strategy)
         finally:

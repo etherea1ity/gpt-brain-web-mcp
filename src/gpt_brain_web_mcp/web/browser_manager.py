@@ -133,6 +133,21 @@ class BrowserSessionManager:
             pass
         return self.settings.browser_profile_dir
 
+
+    def _stop_windows_profile_processes(self, profile_fragment: str) -> None:
+        ps = Path("/tmp/gpt_brain_web_stop_profile_chrome.ps1")
+        escaped_profile = profile_fragment.replace('"', '`"')
+        ps.write_text(
+            "$profile = \"" + escaped_profile + "\"\n"
+            "$targets = Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'chrome.exe' -or $_.Name -eq 'msedge.exe') -and $_.CommandLine -like \"*$profile*\" }\n"
+            "$targets | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force } catch {} }\n",
+            encoding="utf-8",
+        )
+        try:
+            subprocess.run(["/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", self._win_path(ps)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+        except Exception:
+            pass
+
     def _stop_windows_profile_processes_without_port(self, profile_fragment: str, port: int) -> None:
         ps = Path("/tmp/gpt_brain_web_stop_stale_chrome.ps1")
         escaped_profile = profile_fragment.replace('"', '`"')
@@ -167,25 +182,29 @@ class BrowserSessionManager:
         win_profile = self._win_path(win_profile_wsl)
         self._stop_windows_profile_processes_without_port(win_profile, port)
         args = self._windows_browser_args(exe, port, win_profile)
-        if not self._cdp_responds(port):
-            self._external_browser_proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         endpoint = f"http://localhost:{port}"
-        deadline = time.time() + 20
         last_exc = None
-        while time.time() < deadline:
-            try:
-                self.browser = self._pw.chromium.connect_over_cdp(endpoint)
-                self.context = self.browser.contexts[0] if self.browser.contexts else self.browser.new_context()
-                page = self.context.pages[0] if self.context.pages else self.context.new_page()
+        for attempt in range(2):
+            if attempt > 0:
+                self._stop_windows_profile_processes(win_profile)
+                time.sleep(0.8)
+            if not self._cdp_responds(port):
+                self._external_browser_proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            deadline = time.time() + 20
+            while time.time() < deadline:
                 try:
-                    page.goto(self.settings.chatgpt_url, wait_until="domcontentloaded", timeout=30000)
-                except Exception:
-                    pass
-                self.store.upsert_profile(str(win_profile_wsl), "unknown", self.settings.headless, notes="Using Windows Chrome/Edge CDP fallback from WSL with dedicated profile.")
-                return ChatGPTPage(page, self.selectors)
-            except Exception as exc:
-                last_exc = exc
-                time.sleep(0.5)
+                    self.browser = self._pw.chromium.connect_over_cdp(endpoint)
+                    self.context = self.browser.contexts[0] if self.browser.contexts else self.browser.new_context()
+                    page = self.context.pages[0] if self.context.pages else self.context.new_page()
+                    try:
+                        page.goto(self.settings.chatgpt_url, wait_until="domcontentloaded", timeout=30000)
+                    except Exception:
+                        pass
+                    self.store.upsert_profile(str(win_profile_wsl), "unknown", self.settings.headless, notes="Using Windows Chrome/Edge CDP fallback from WSL with dedicated profile.")
+                    return ChatGPTPage(page, self.selectors)
+                except Exception as exc:
+                    last_exc = exc
+                    time.sleep(0.5)
         raise BrowserUnavailable(f"Timed out connecting to Windows browser CDP: {last_exc}")
 
     def _windows_browser_args(self, exe: str, port: int, win_profile: str) -> list[str]:
