@@ -106,6 +106,11 @@ class Store:
             row = conn.execute("SELECT * FROM web_sessions WHERE project=? ORDER BY updated_at DESC LIMIT 1", (redact_text(project),)).fetchone()
         return dict(row) if row else None
 
+    def get_session(self, session_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM web_sessions WHERE session_id=?", (session_id,)).fetchone()
+        return dict(row) if row else None
+
     def create_job(self, project: str | None, kind: str, requested_tier: str, requested_research_mode: str | None = None) -> str:
         jid, ts = new_id("job"), now()
         with self.connect() as conn:

@@ -45,4 +45,4 @@ def doctor(settings: Settings | None = None, verbose: bool = False) -> dict[str,
     else:
         critical.update({"playwright_installed", "browser_daemon_can_start", "login_state", "prompt_box_detectable", "send_button_detectable"})
     ok = all(c["ok"] for c in checks if c["name"] in critical)
-    return {"ok": ok, "backend_default": s.backend, "default_tier": s.default_tier, "home": str(s.home), "profile_path": str(s.browser_profile_dir), "checks": checks if verbose else [{k:v for k,v in c.items() if k != "details"} for c in checks]}
+    return {"ok": ok, "backend_default": s.backend, "default_tier": s.default_tier, "default_project": s.default_project, "conversation_policy": s.default_conversation_policy, "home": str(s.home), "profile_path": str(s.browser_profile_dir), "checks": checks if verbose else [{k:v for k,v in c.items() if k != "details"} for c in checks]}

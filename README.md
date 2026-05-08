@@ -127,7 +127,7 @@ Install merges a block like this without deleting existing settings:
 [mcp_servers.gpt-brain-web]
 command = "/path/to/gpt-brain-web-mcp/.venv/bin/python"
 args = ["-m", "gpt_brain_web_mcp.server"]
-env = { "GPT_BRAIN_BACKEND" = "web-chatgpt", "GPT_BRAIN_DEFAULT_TIER" = "thinking_heavy", "GPT_BRAIN_ALLOW_PRO_DEFAULT" = "false", "GPT_BRAIN_BROWSER_HEADLESS" = "true", "GPT_BRAIN_HOME" = "/home/you/.gpt-brain-web" }
+env = { "GPT_BRAIN_BACKEND" = "web-chatgpt", "GPT_BRAIN_DEFAULT_TIER" = "thinking_heavy", "GPT_BRAIN_ALLOW_PRO_DEFAULT" = "false", "GPT_BRAIN_DEFAULT_PROJECT" = "Codex Brain", "GPT_BRAIN_CONVERSATION_POLICY" = "reuse_project", "GPT_BRAIN_BROWSER_HEADLESS" = "true", "GPT_BRAIN_HOME" = "/home/you/.gpt-brain-web" }
 ```
 
 Restart Codex after changing MCP config.
@@ -145,6 +145,21 @@ Restart Codex after changing MCP config.
 - `cleanup_browser`
 - `daemon_status`
 
+### Project and conversation management
+
+The gateway now treats `project` as the primary routing key for Codex + ChatGPT work:
+
+- If `project` is omitted, requests go to `GPT_BRAIN_DEFAULT_PROJECT` (`Codex Brain` by default). This gives everyday Codex calls one stable "big project" instead of anonymous drift.
+- If `project` is provided, only that project's latest conversation is reused. Different projects do not share conversation URLs.
+- `save_session=true` writes a local SQLite audit/session record; it is not the same thing as choosing whether ChatGPT should reuse a thread.
+- `conversation_strategy="reuse_project"` (default) reuses the latest known project conversation when possible.
+- `conversation_strategy="new"` starts a fresh project conversation and then binds the project to the new URL after ChatGPT creates one.
+- `conversation_strategy="resume_session"` plus `session_id` resumes a stored local session's `conversation_url`.
+- `conversation_strategy="resume_url"` plus `conversation_url` resumes an explicit ChatGPT `/c/...` URL.
+- `start_research` always uses an isolated job conversation so Deep Research / web research does not pollute the normal project thread.
+
+For real ChatGPT Projects, the browser adapter opens the dedicated sidebar, expands `More -> Projects` when necessary, and clicks an existing project row. It does not auto-create projects or upload project files. If the configured project is missing, the tool falls back to the current/new chat context with a warning.
+
 ### ask_brain default strategy
 
 ```json
@@ -153,7 +168,9 @@ Restart Codex after changing MCP config.
   "tier": "thinking_heavy",
   "allow_pro": false,
   "web_search": false,
-  "async": false
+  "async": false,
+  "project": "Codex Brain",
+  "conversation_strategy": "reuse_project"
 }
 ```
 
@@ -185,7 +202,7 @@ If `allow_pro=false`, requests for `pro` or `pro_extended` are downgraded/warned
 
 ### start_research
 
-`start_research` is always asynchronous. It quickly returns a `job_id`; use `get_research_result` to poll. The backend attempts to detect and select a visible Deep Research UI control. If that UI is not detectable/selectable for the logged-in account, the job falls back to a Web Research prompt and records:
+`start_research` is always asynchronous and uses a separate job conversation. It quickly returns a `job_id`; use `get_research_result` to poll. `get_research_result` returns both `requested_research_mode` and `resolved_research_mode` so callers can tell whether real Deep Research was used or a web-research prompt fallback was used. The backend attempts to detect and select a visible Deep Research UI control. If that UI is not detectable/selectable for the logged-in account, the job falls back to a Web Research prompt and records:
 
 ```text
 Deep Research UI not available; used web research fallback.

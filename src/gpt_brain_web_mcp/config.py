@@ -20,6 +20,8 @@ def default_home() -> Path:
 class Settings:
     backend: str = DEFAULT_BACKEND
     default_tier: str = DEFAULT_TIER
+    default_project: str = "Codex Brain"
+    default_conversation_policy: str = "reuse_project"
     allow_pro_default: bool = False
     home: Path = None  # type: ignore[assignment]
     db_path: Path = None  # type: ignore[assignment]
@@ -58,6 +60,8 @@ class Settings:
         return cls(
             backend=os.getenv("GPT_BRAIN_BACKEND", DEFAULT_BACKEND),
             default_tier=os.getenv("GPT_BRAIN_DEFAULT_TIER", DEFAULT_TIER),
+            default_project=os.getenv("GPT_BRAIN_DEFAULT_PROJECT", "Codex Brain"),
+            default_conversation_policy=os.getenv("GPT_BRAIN_CONVERSATION_POLICY", "reuse_project"),
             allow_pro_default=bool_env("GPT_BRAIN_ALLOW_PRO_DEFAULT", False),
             home=home,
             db_path=Path(os.getenv("GPT_BRAIN_DB_PATH", str(home / "brain.db"))),

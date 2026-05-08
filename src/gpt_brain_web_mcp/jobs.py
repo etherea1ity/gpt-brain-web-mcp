@@ -56,7 +56,7 @@ class JobManager:
                     "Return the final answer directly now. Do not narrate that you will verify, search, or research later.\n"
                     "Include executive summary, evidence table when useful, recommendation, risks/unknowns, sources, and next steps."
                 )
-                req = BrainRequest(question=prompt, project=project, context=context, tier=tier, allow_pro=allow_pro, web_search=True, save_session=False, conversation_kind="job", conversation_key=jid)
+                req = BrainRequest(question=prompt, project=project, context=context, tier=tier, allow_pro=allow_pro, web_search=True, save_session=False, conversation_kind="job", conversation_key=jid, conversation_strategy="new")
                 res = WebChatGPTBackend(self.service.settings, self.store, browser).ask_web(req, None)
                 if self._is_cancelled(jid):
                     self.store.update_job(jid, status="cancelled", resolved_tier=res.resolved_tier, resolved_research_mode=resolved_mode, conversation_url=res.conversation_url, warnings_json=res.warnings + warnings, sources_json=res.sources)
@@ -94,7 +94,7 @@ class JobManager:
         row = self.store.get_job(job_id)
         if not row:
             return {"job_id": job_id, "status": "failed", "result": None, "sources": [], "artifact_path": None, "conversation_url": None, "created_at": None, "updated_at": None, "error": "not_found", "warnings": []}
-        return {"job_id": row["job_id"], "status": row["status"], "result": row.get("result_redacted"), "sources": row.get("sources", []), "artifact_path": row.get("artifact_path"), "conversation_url": row.get("conversation_url"), "created_at": row.get("created_at"), "updated_at": row.get("updated_at"), "error": row.get("error_redacted"), "warnings": row.get("warnings", [])}
+        return {"job_id": row["job_id"], "status": row["status"], "result": row.get("result_redacted"), "sources": row.get("sources", []), "artifact_path": row.get("artifact_path"), "conversation_url": row.get("conversation_url"), "requested_research_mode": row.get("requested_research_mode"), "resolved_research_mode": row.get("resolved_research_mode"), "created_at": row.get("created_at"), "updated_at": row.get("updated_at"), "error": row.get("error_redacted"), "warnings": row.get("warnings", [])}
 
     def cancel(self, job_id: str) -> dict[str, str]:
         row = self.store.get_job(job_id)

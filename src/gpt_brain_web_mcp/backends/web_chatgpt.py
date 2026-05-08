@@ -26,14 +26,45 @@ class WebChatGPTBackend(BrainBackend):
         page = self.browser.acquire_page(job_key)
         try:
             page.ensure_logged_in()
+            force_new = request.conversation_strategy == "new"
+            if request.conversation_strategy not in {"reuse_project", "new", "resume_session", "resume_url", "recover_or_new"}:
+                warnings.append(f"Unknown conversation_strategy={request.conversation_strategy!r}; using reuse_project.")
+                force_new = False
+            if getattr(request, "conversation_kind", "project") == "job":
+                conv = self.browser.create_or_reuse_conversation(request.conversation_key or session_id or "job", "job", force_new=True)
+            elif request.conversation_strategy == "resume_url" and request.resume_conversation_url:
+                conv = request.resume_conversation_url
+            elif request.conversation_strategy == "resume_session" and request.resume_session_id:
+                row = self.store.get_session(request.resume_session_id)
+                conv = row.get("conversation_url") if row else None
+                if not conv:
+                    warnings.append(f"resume_session_id={request.resume_session_id!r} was not found or has no conversation_url; falling back to project policy.")
+                    conv = self.browser.create_or_reuse_conversation(request.project, "project", force_new=False)
+            else:
+                conv = self.browser.create_or_reuse_conversation(request.project, "project", force_new=force_new)
+            recovery_action = None
+            recovery_reason = None
+            if conv and conv.startswith("https://"):
+                try:
+                    page = self.browser.navigate_to_conversation(conv)
+                    page.ensure_logged_in()
+                except Exception as exc:
+                    warnings.append(f"Saved ChatGPT conversation could not be reopened; creating a new project conversation. Reason: {exc}")
+                    recovery_action = "created_new"
+                    recovery_reason = "saved_conversation_unavailable"
+                    self.store.add_event("conversation_recovery", f"Saved conversation unavailable for project={request.project!r}: {exc}", session_id=session_id)
+                    conv = self.browser.create_or_reuse_conversation(request.project, "project", force_new=True)
+            if conv and conv.startswith("chatgpt://local/project/") and request.project and hasattr(page, "open_project"):
+                try:
+                    if not page.open_project(request.project):
+                        warnings.append(
+                            f"ChatGPT project {request.project!r} was not found in the sidebar; using the current/new chat context. "
+                            "Create that project in ChatGPT or set GPT_BRAIN_DEFAULT_PROJECT to an existing project."
+                        )
+                except Exception as exc:
+                    warnings.append(f"Could not open ChatGPT project {request.project!r}; using current/new chat context. Reason: {exc}")
             selection = self.modes.select_tier(page, request.tier, request.allow_pro)
             warnings.extend(selection.warnings)
-            if getattr(request, "conversation_kind", "project") == "job":
-                conv = self.browser.create_or_reuse_conversation(request.conversation_key or session_id or "job", "job")
-            else:
-                conv = self.browser.create_or_reuse_conversation(request.project, "project")
-            if conv and conv.startswith("https://"):
-                page = self.browser.navigate_to_conversation(conv)
             page.conversation_url = conv
             prompt = self._render_prompt(request, web_search)
             page.submit_prompt(prompt, web_search=web_search)
@@ -48,9 +79,9 @@ class WebChatGPTBackend(BrainBackend):
             sources = self.sources.extract_sources(page if web_search else answer)
             if web_search and not sources:
                 warnings.append("Web Search requested but no sources/citations were detected.")
-            return BrainResult(answer=answer, backend=self.name, requested_tier=request.tier, resolved_tier=selection.resolved_tier, fallback_chain=selection.fallback_chain, session_id=session_id, conversation_url=real_conv, warnings=warnings, sources=sources)
+            return BrainResult(answer=answer, backend=self.name, requested_tier=request.tier, resolved_tier=selection.resolved_tier, fallback_chain=selection.fallback_chain, session_id=session_id, conversation_url=real_conv, warnings=warnings, sources=sources, project=request.project, conversation_strategy=request.conversation_strategy, recovery_action=recovery_action, recovery_reason=recovery_reason)
         except NeedsUserAction as exc:
-            return BrainResult(answer="", backend=self.name, requested_tier=request.tier, resolved_tier="", fallback_chain=seq, session_id=session_id, warnings=[*warnings, str(exc)])
+            return BrainResult(answer="", backend=self.name, requested_tier=request.tier, resolved_tier="", fallback_chain=seq, session_id=session_id, warnings=[*warnings, str(exc)], project=request.project, conversation_strategy=request.conversation_strategy)
         finally:
             self.browser.release_page(job_key)
 

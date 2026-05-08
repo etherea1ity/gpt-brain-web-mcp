@@ -1,4 +1,4 @@
 [mcp_servers.gpt-brain-web]
 command = "/absolute/path/to/gpt-brain-web-mcp/.venv/bin/python"
 args = ["-m", "gpt_brain_web_mcp.server"]
-env = { "GPT_BRAIN_BACKEND" = "web-chatgpt", "GPT_BRAIN_DEFAULT_TIER" = "thinking_heavy", "GPT_BRAIN_ALLOW_PRO_DEFAULT" = "false", "GPT_BRAIN_BROWSER_HEADLESS" = "true", "GPT_BRAIN_HOME" = "/home/you/.gpt-brain-web" }
+env = { "GPT_BRAIN_BACKEND" = "web-chatgpt", "GPT_BRAIN_DEFAULT_TIER" = "thinking_heavy", "GPT_BRAIN_ALLOW_PRO_DEFAULT" = "false", "GPT_BRAIN_DEFAULT_PROJECT" = "Codex Brain", "GPT_BRAIN_CONVERSATION_POLICY" = "reuse_project", "GPT_BRAIN_BROWSER_HEADLESS" = "true", "GPT_BRAIN_HOME" = "/home/you/.gpt-brain-web" }

@@ -30,6 +30,9 @@ class BrainRequest:
     save_session: bool = True
     conversation_kind: str = "project"
     conversation_key: str | None = None
+    conversation_strategy: str = "reuse_project"
+    resume_session_id: str | None = None
+    resume_conversation_url: str | None = None
 
 
 @dataclass(slots=True)
@@ -47,6 +50,10 @@ class BrainResult:
     artifacts: list[str] = field(default_factory=list)
     requested_research_mode: str | None = None
     resolved_research_mode: str | None = None
+    project: str | None = None
+    conversation_strategy: str = "reuse_project"
+    recovery_action: str | None = None
+    recovery_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

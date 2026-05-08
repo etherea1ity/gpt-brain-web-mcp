@@ -33,6 +33,7 @@ def _install_codex_config(settings: Settings, *, dry_run: bool = False, uninstal
         dry_run=dry_run,
         uninstall=uninstall,
         headless=settings.headless if headless is None else headless,
+        default_project=settings.default_project,
     )
     return {
         "ok": True,

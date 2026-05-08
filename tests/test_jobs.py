@@ -15,6 +15,8 @@ def test_research_job_completes_and_artifact_exists(tmp_path):
         time.sleep(0.05)
     assert result["status"] == "completed"
     assert result["artifact_path"]
+    assert result["requested_research_mode"] == "deep_research"
+    assert result["resolved_research_mode"] == "web_research_prompt"
     assert "Deep Research UI not available" in " ".join(result["warnings"])
 
 

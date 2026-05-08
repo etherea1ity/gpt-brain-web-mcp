@@ -195,6 +195,97 @@ class ChatGPTPage:
                 continue
         return False
 
+    def open_project(self, project_name: str) -> bool:
+        """Open an existing ChatGPT Project from the dedicated sidebar.
+
+        This is deliberately conservative: it does not create projects or
+        upload files. It tries visible project rows first, then expands the
+        sidebar's More/Projects affordances when the project list is long.
+        """
+        name = (project_name or "").strip()
+        if not name:
+            return False
+        self._ensure_sidebar_visible()
+        if self._click_project_text(name):
+            return True
+        self._expand_projects_sidebar()
+        if self._click_project_text(name):
+            return True
+        self._click_sidebar_more()
+        self._expand_projects_sidebar()
+        if self._click_project_text(name):
+            return True
+        return False
+
+    def _ensure_sidebar_visible(self) -> None:
+        # In normal desktop widths the sidebar is already visible. The buttons
+        # below cover collapsed/narrow layouts without depending on CSS classes.
+        for label in ["Open sidebar", "Show sidebar", "Sidebar"]:
+            try:
+                btn = self.page.get_by_role("button", name=label).last
+                if btn.count() > 0 and btn.is_visible(timeout=500):
+                    btn.click(timeout=1000)
+                    self.page.wait_for_timeout(300)
+                    return
+            except Exception:
+                continue
+
+    def _expand_projects_sidebar(self) -> None:
+        for label in ["Projects", "Show projects", "More projects"]:
+            try:
+                self.page.get_by_text(label, exact=False).last.click(timeout=1000)
+                self.page.wait_for_timeout(500)
+                return
+            except Exception:
+                pass
+            try:
+                self.page.get_by_role("button", name=label).last.click(timeout=1000)
+                self.page.wait_for_timeout(300)
+                return
+            except Exception:
+                continue
+
+    def _click_sidebar_more(self) -> None:
+        for label in ["More", "Show more"]:
+            try:
+                self.page.get_by_text(label, exact=True).last.click(timeout=1000)
+                self.page.wait_for_timeout(500)
+                return
+            except Exception:
+                pass
+            try:
+                self.page.get_by_role("button", name=label).last.click(timeout=1000)
+                self.page.wait_for_timeout(300)
+                return
+            except Exception:
+                continue
+
+    def _click_project_text(self, name: str) -> bool:
+        candidates = [
+            lambda: self.page.get_by_role("link", name=name, exact=True).last,
+            lambda: self.page.get_by_role("button", name=name, exact=True).last,
+            lambda: self.page.get_by_text(name, exact=True).last,
+        ]
+        for make in candidates:
+            try:
+                loc = make()
+                if loc.count() == 0:
+                    continue
+                try:
+                    loc.scroll_into_view_if_needed(timeout=1000)
+                except Exception:
+                    pass
+                loc.click(timeout=2000)
+                try:
+                    self.page.wait_for_load_state("domcontentloaded", timeout=3000)
+                except Exception:
+                    pass
+                self.page.wait_for_timeout(800)
+                return True
+            except Exception:
+                continue
+        return False
+
     def disable_deep_research(self) -> bool:
         for label in ["Deep research, click to remove", "Deep Research, click to remove"]:
             try:
@@ -289,6 +380,10 @@ class ChatGPTPage:
                 else:
                     loc = self.page.locator(sel).last
                 loc.wait_for(state="visible", timeout=3000)
+                try:
+                    loc.scroll_into_view_if_needed(timeout=1000)
+                except Exception:
+                    pass
                 return loc
             except Exception:
                 continue

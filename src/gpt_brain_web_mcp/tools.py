@@ -24,6 +24,9 @@ class WebBrainService:
         self.store.add_message(sid, "user", req.question + ("\n\n" + req.context if req.context else ""))
         return sid
 
+    def _effective_project(self, project: str | None) -> str:
+        return (project or self.settings.default_project).strip() or "Codex Brain"
+
     def ask_brain(self, req: BrainRequest) -> Any:
         sid = self._session(req)
         res = self.backend.ask_brain(req, sid)
@@ -45,10 +48,14 @@ class WebBrainService:
         async_request = bool(kwargs.pop("async_request", kwargs.pop("async", False)))
         tier = normalize_tier(kwargs.get("tier") or self.settings.default_tier)
         allow_pro = bool(kwargs.get("allow_pro", self.settings.allow_pro_default))
+        project = self._effective_project(kwargs.get("project"))
+        conversation_strategy = str(kwargs.get("conversation_strategy") or self.settings.default_conversation_policy or "reuse_project")
+        resume_session_id = kwargs.get("session_id") or kwargs.get("resume_session_id")
+        resume_conversation_url = kwargs.get("conversation_url") or kwargs.get("resume_conversation_url")
         if async_request:
-            started = self.jobs.start_research(kwargs["question"], kwargs.get("project"), kwargs.get("context"), tier, allow_pro, bool(kwargs.get("web_search", False)), "bullet_summary", 30)
+            started = self.jobs.start_research(kwargs["question"], project, kwargs.get("context"), tier, allow_pro, bool(kwargs.get("web_search", False)), "bullet_summary", 30)
             return {"answer": None, "backend": "web-chatgpt", "job_id": started.job_id, "status": started.status, "warnings": []}
-        req = BrainRequest(redact_text(kwargs["question"]), kwargs.get("project"), redact_text(kwargs.get("context")) if kwargs.get("context") else None, tier, allow_pro, bool(kwargs.get("web_search", False)), False, bool(kwargs.get("save_session", True)))
+        req = BrainRequest(redact_text(kwargs["question"]), project, redact_text(kwargs.get("context")) if kwargs.get("context") else None, tier, allow_pro, bool(kwargs.get("web_search", False)), False, bool(kwargs.get("save_session", True)), conversation_strategy=conversation_strategy, resume_session_id=resume_session_id, resume_conversation_url=resume_conversation_url)
         res = self.ask_web(req) if req.web_search else self.ask_brain(req)
         return redact_obj(res.to_dict())
 
@@ -57,7 +64,7 @@ class WebBrainService:
         return self.tool_ask_brain(**kwargs)
 
     def start_research(self, **kwargs) -> dict[str, Any]:
-        started = self.jobs.start_research(redact_text(kwargs["topic"]), kwargs.get("project"), redact_text(kwargs.get("context")) if kwargs.get("context") else None, normalize_tier(kwargs.get("tier") or self.settings.default_tier), bool(kwargs.get("allow_pro", self.settings.allow_pro_default)), bool(kwargs.get("deep_research", True)), kwargs.get("output_format", "report"), int(kwargs.get("max_runtime_hint_minutes", 30)))
+        started = self.jobs.start_research(redact_text(kwargs["topic"]), self._effective_project(kwargs.get("project")), redact_text(kwargs.get("context")) if kwargs.get("context") else None, normalize_tier(kwargs.get("tier") or self.settings.default_tier), bool(kwargs.get("allow_pro", self.settings.allow_pro_default)), bool(kwargs.get("deep_research", True)), kwargs.get("output_format", "report"), int(kwargs.get("max_runtime_hint_minutes", 30)))
         return started.to_dict()
 
     def get_research_result(self, job_id: str): return redact_obj(self.jobs.get(job_id))

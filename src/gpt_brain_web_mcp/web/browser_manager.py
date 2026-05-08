@@ -261,8 +261,8 @@ class BrowserSessionManager:
         page.conversation_url = conversation_url
         return page
 
-    def create_or_reuse_conversation(self, project: str | None, kind: str) -> str:
-        existing = self.store.find_project_session(project) if project and kind == "project" else None
+    def create_or_reuse_conversation(self, project: str | None, kind: str, *, force_new: bool = False) -> str:
+        existing = self.store.find_project_session(project) if project and kind == "project" and not force_new else None
         if existing and existing.get("conversation_url"):
             return existing["conversation_url"]
         # ChatGPT creates the real URL after the first message; use a local
@@ -270,7 +270,8 @@ class BrowserSessionManager:
         # the real /c/... URL.
         if kind == "job":
             return f"chatgpt://local/job/{project or uuid.uuid4().hex}"
-        url = f"chatgpt://local/project/{project or kind}"
+        suffix = uuid.uuid4().hex if force_new else (project or kind)
+        url = f"chatgpt://local/project/{suffix}"
         if project and kind == "project": self.store.set_project_conversation(project, url, title=f"{project} brain")
         return url
 

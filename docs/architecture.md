@@ -37,7 +37,7 @@ In WSL, if Linux Chromium cannot launch because host libraries are missing, the 
 
 ### Conversation manager
 
-`web/conversation_manager.py` and `Store` persist project/session/job mappings to `conversation_url`. A local placeholder is used before the first message; after ChatGPT assigns a real `https://chatgpt.com/c/...` URL, it is captured and stored. Project asks navigate back to the latest real project conversation when available.
+`web/conversation_manager.py` and `Store` persist project/session/job mappings to `conversation_url`. A local placeholder is used before the first message; after ChatGPT assigns a real `https://chatgpt.com/c/...` URL, it is captured and stored. Project asks default to `GPT_BRAIN_DEFAULT_PROJECT` (`Codex Brain`) when the MCP caller omits `project`, then navigate back to that project's latest real conversation when available. `conversation_strategy` controls reuse (`reuse_project`), fresh thread creation (`new`), and explicit resume (`resume_session` / `resume_url`). Research jobs always use isolated job conversations.
 
 ### Job queue
 
@@ -54,3 +54,8 @@ Playwright selectors are centralized in `config/selectors.yaml`. Model labels ar
 ### Extension bridge
 
 `web/extension_bridge.py` is a stub for a future bundled worker extension loaded by our Playwright Chromium profile. It is not a user-installed Chrome extension.
+
+
+### Real ChatGPT Project navigation
+
+`ChatGPTPage.open_project()` opens existing ChatGPT Projects from the dedicated profile sidebar. It handles the compact sidebar state by expanding `More` and then `Projects`, then clicking the project row. This is intentionally not a project-creation API: missing projects produce warnings and the request continues in the current/new chat context. The composer is located by role/textbox and CSS fallbacks each time, so the input box moving downward inside a project or Deep Research mode is handled by locator lookup rather than fixed coordinates.
