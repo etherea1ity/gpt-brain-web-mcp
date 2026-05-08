@@ -50,15 +50,115 @@ class ChatGPTPage:
         self.generation_running = False
 
     def select_mode_label(self, label: str) -> bool:
-        # Honest V1: accept the mode only if its label is visible in the current UI.
+        mapped = self._map_mode_label(label)
+        if mapped:
+            model, effort = mapped
+            if self.select_model_mode(model, effort):
+                self.selected_tier = label
+                return True
+        # Honest fallback: accept the mode only if its label is visible in the current UI.
         try:
             body = self.page.locator("body").inner_text(timeout=3000)
             if label.lower() in body.lower():
-                self.selected_tier = label
-                return True
+                if self._open_model_menu():
+                    try:
+                        self.page.get_by_text(label, exact=False).last.click(timeout=3000)
+                        self.selected_tier = label
+                        return True
+                    except Exception:
+                        pass
         except Exception:
             pass
         return False
+
+    def _map_mode_label(self, label: str) -> tuple[str, str | None] | None:
+        low = label.lower()
+        if "pro" in low and "extended" in low:
+            return ("Pro", "Extended")
+        if "pro" in low:
+            return ("Pro", "Standard")
+        if "heavy" in low or "high" in low:
+            return ("Thinking", "Heavy")
+        if "extended" in low or "longer" in low:
+            return ("Thinking", "Extended")
+        if any(x in low for x in ["thinking", "standard", "default", "normal"]):
+            return ("Thinking", "Standard")
+        if "instant" in low:
+            return ("Instant", None)
+        return None
+
+    def _open_model_menu(self) -> bool:
+        for sel in self.selectors.get("model_picker", []):
+            try:
+                if sel.startswith("role:button:"):
+                    name = sel.split(":", 2)[2]
+                    self.page.get_by_role("button", name=name).last.click(timeout=2500)
+                else:
+                    self.page.locator(sel).last.click(timeout=2500)
+                self.page.wait_for_timeout(400)
+                if self.page.locator('[role="menu"]').count() > 0:
+                    return True
+            except Exception:
+                continue
+        for text in ["Heavy", "Thinking", "Extended", "Instant", "Pro"]:
+            try:
+                self.page.get_by_text(text, exact=True).last.click(timeout=2500)
+                self.page.wait_for_timeout(400)
+                if self.page.locator('[role="menu"]').count() > 0:
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def select_model_mode(self, model_label: str, effort_label: str | None = None) -> bool:
+        """Select ChatGPT's model/mode picker without sending a prompt.
+
+        Current ChatGPT Pro UI exposes rows such as Instant, Thinking and Pro.
+        Thinking/Pro rows have a trailing Effort button that opens Light /
+        Standard / Extended / Heavy options. This method follows that UI and
+        returns false instead of pretending success when the controls are absent.
+        """
+        if not self._open_model_menu():
+            return False
+        try:
+            rows = self.page.locator('[role="menuitemradio"]')
+            target = None
+            for i in range(rows.count()):
+                row = rows.nth(i)
+                try:
+                    if model_label.lower() in row.inner_text(timeout=1000).lower():
+                        target = row
+                        break
+                except Exception:
+                    continue
+            if target is None:
+                return False
+            if effort_label:
+                effort_button = target.locator('[aria-label="Effort"], [data-model-picker-thinking-effort-action="true"]').last
+                if effort_button.count() > 0:
+                    effort_button.click(timeout=3000)
+                    self.page.wait_for_timeout(300)
+                    options = self.page.locator('[role="menuitemradio"]')
+                    for i in range(options.count()):
+                        opt = options.nth(i)
+                        try:
+                            if opt.inner_text(timeout=1000).strip().lower() == effort_label.lower():
+                                opt.click(timeout=3000)
+                                self.page.wait_for_timeout(500)
+                                self.selected_tier = f"{model_label} {effort_label}"
+                                return True
+                        except Exception:
+                            continue
+                # Fall back to selecting the model row if the effort submenu is absent.
+            target.click(timeout=3000)
+            self.page.wait_for_timeout(500)
+            self.selected_tier = model_label if not effort_label else f"{model_label} {effort_label}"
+            return True
+        finally:
+            try:
+                self.page.keyboard.press("Escape")
+            except Exception:
+                pass
 
     def has_visible_text(self, labels: list[str]) -> bool:
         try:
@@ -73,6 +173,7 @@ class ChatGPTPage:
         This intentionally does not fake success. It only returns true when a
         visible control with a known Deep Research label can be clicked.
         """
+        self._open_composer_plus_menu()
         labels = ["Deep research", "Deep Research"]
         for label in labels:
             try:
@@ -82,6 +183,36 @@ class ChatGPTPage:
             except Exception:
                 continue
         self.deep_research_available = False
+        return False
+
+    def _open_composer_plus_menu(self) -> bool:
+        for sel in ['[data-testid="composer-plus-btn"]', 'button[aria-label*="Add files"]', 'button[aria-label*="Add"]']:
+            try:
+                self.page.locator(sel).last.click(timeout=2500)
+                self.page.wait_for_timeout(400)
+                return True
+            except Exception:
+                continue
+        return False
+
+    def disable_deep_research(self) -> bool:
+        for label in ["Deep research, click to remove", "Deep Research, click to remove"]:
+            try:
+                self.page.get_by_label(label).last.click(timeout=2000)
+                self.page.wait_for_timeout(500)
+                self.deep_research_available = False
+                return True
+            except Exception:
+                continue
+        try:
+            buttons = self.page.locator("button").filter(has_text="Deep research")
+            if buttons.count() > 0:
+                buttons.last.click(timeout=2000)
+                self.page.wait_for_timeout(500)
+                self.deep_research_available = False
+                return True
+        except Exception:
+            pass
         return False
 
     def ensure_logged_in(self) -> None:
