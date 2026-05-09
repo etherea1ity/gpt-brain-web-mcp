@@ -23,8 +23,19 @@ def doctor(settings: Settings | None = None, verbose: bool = False) -> dict[str,
         from .web.browser_manager import BrowserSessionManager
         manager = BrowserSessionManager(s, store)
         health = None
+        ui_checks = None
         try:
             health = manager.healthcheck() if s.mock_browser or importlib.util.find_spec("playwright") else None
+            if health and health.login_state == "logged_in":
+                try:
+                    page = manager.acquire_page("doctor_ui_check")
+                    ui_checks = {
+                        "deep_research": page.check_deep_research_ui() if hasattr(page, "check_deep_research_ui") else {"available": False},
+                        "web_search": page.check_web_search_ui() if hasattr(page, "check_web_search_ui") else {"available": False},
+                    }
+                    manager.release_page("doctor_ui_check")
+                except Exception as exc:
+                    ui_checks = {"error": str(exc)}
         finally:
             manager.stop_browser()
         add("browser_daemon_can_start", bool(health) or bool(s.mock_browser or importlib.util.find_spec("playwright")), "Mock daemon OK" if s.mock_browser else ("Browser healthcheck ran" if health else "Playwright available but browser healthcheck not run"))
@@ -34,6 +45,11 @@ def doctor(settings: Settings | None = None, verbose: bool = False) -> dict[str,
         add("send_button_detectable", bool(health and health.send_button_detectable), "mock OK" if s.mock_browser else ("live OK" if health and health.send_button_detectable else "send button missing; update selectors.yaml"))
         add("result_extractor_health", True, "Result extractor import OK")
         add("source_extractor_health", True, "Source extractor import OK")
+        if ui_checks and "error" not in ui_checks:
+            add("deep_research_ui_detectable", bool(ui_checks.get("deep_research", {}).get("available")), "available" if ui_checks.get("deep_research", {}).get("available") else "Deep Research control not detected; research will fallback honestly", details=ui_checks.get("deep_research"))
+            add("web_search_ui_detectable", bool(ui_checks.get("web_search", {}).get("available")), "available" if ui_checks.get("web_search", {}).get("available") else "Search control not detected; ask_web will use prompt fallback and warn", details=ui_checks.get("web_search"))
+        elif ui_checks and "error" in ui_checks:
+            add("web_ui_capability_check", False, ui_checks["error"])
     except Exception as exc:
         add("browser_daemon_can_start", False, str(exc))
     add("background_mode_status", s.headless and not s.visible, f"headless={s.headless}, visible={s.visible}")

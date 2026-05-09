@@ -84,6 +84,12 @@ class WebChatGPTBackend(BrainBackend):
                 warnings.extend(research_warnings)
             elif request.requested_research_mode:
                 resolved_research_mode = request.requested_research_mode
+            elif web_search and hasattr(page, "enable_web_search"):
+                try:
+                    if not page.enable_web_search():
+                        warnings.append("Web Search requested but Search UI could not be enabled; continuing with search-oriented prompt.")
+                except Exception as exc:
+                    warnings.append(f"Web Search UI enable failed; continuing with search-oriented prompt. Reason: {exc}")
             page.conversation_url = conv
             if request.conversation_key:
                 def _progress(event: str, detail: str) -> None:
@@ -112,9 +118,14 @@ class WebChatGPTBackend(BrainBackend):
                     page.disable_deep_research()
                 except Exception:
                     pass
-            return BrainResult(answer=answer, backend=self.name, requested_tier=request.tier, resolved_tier=selection.resolved_tier, fallback_chain=selection.fallback_chain, session_id=session_id, conversation_url=real_conv, warnings=warnings, sources=sources, requested_research_mode=request.requested_research_mode, resolved_research_mode=resolved_research_mode, project=request.project, conversation_strategy=request.conversation_strategy, recovery_action=recovery_action, recovery_reason=recovery_reason)
+            elif web_search and hasattr(page, "disable_web_search"):
+                try:
+                    page.disable_web_search()
+                except Exception:
+                    pass
+            return BrainResult(answer=answer, backend=self.name, requested_tier=request.tier, resolved_tier=selection.resolved_tier, fallback_chain=selection.fallback_chain, session_id=session_id, conversation_url=real_conv, warnings=warnings, sources=sources, requested_research_mode=request.requested_research_mode, resolved_research_mode=resolved_research_mode, project=request.project, conversation_strategy=request.conversation_strategy, recovery_action=recovery_action, recovery_reason=recovery_reason, retention=request.retention, cleanup_remote=request.cleanup_remote)
         except NeedsUserAction as exc:
-            return BrainResult(answer="", backend=self.name, requested_tier=request.tier, resolved_tier="", fallback_chain=seq, session_id=session_id, warnings=[*warnings, str(exc)], project=request.project, conversation_strategy=request.conversation_strategy)
+            return BrainResult(answer="", backend=self.name, requested_tier=request.tier, resolved_tier="", fallback_chain=seq, session_id=session_id, warnings=[*warnings, str(exc)], project=request.project, conversation_strategy=request.conversation_strategy, retention=request.retention, cleanup_remote=request.cleanup_remote)
         finally:
             self.browser.release_page(job_key)
 

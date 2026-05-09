@@ -50,6 +50,7 @@ class Store:
             CREATE TABLE IF NOT EXISTS browser_events(event_id TEXT PRIMARY KEY, job_id TEXT, session_id TEXT, event_type TEXT, detail_redacted TEXT, screenshot_path_optional TEXT, created_at TEXT);
             CREATE TABLE IF NOT EXISTS backend_runs(run_id TEXT PRIMARY KEY, job_id TEXT, session_id TEXT, backend TEXT, duration_ms INTEGER, status TEXT, warning_redacted TEXT, created_at TEXT);
             CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT, updated_at TEXT);
+            CREATE TABLE IF NOT EXISTS remote_cleanup_queue(cleanup_id TEXT PRIMARY KEY, conversation_url TEXT NOT NULL, project TEXT, job_id TEXT, session_id TEXT, reason TEXT, retention TEXT, status TEXT, error_redacted TEXT, created_at TEXT, updated_at TEXT);
             """)
             try: os.chmod(self.db_path, 0o600)
             except OSError: pass
@@ -163,6 +164,42 @@ class Store:
             conn.execute("INSERT INTO browser_events(event_id, job_id, session_id, event_type, detail_redacted, screenshot_path_optional, created_at) VALUES(?, ?, ?, ?, ?, ?, ?)",
                          (eid, job_id, session_id, event_type, redact_text(detail), screenshot, now()))
         return eid
+
+    def enqueue_remote_cleanup(self, conversation_url: str, *, reason: str, retention: str = "ephemeral", project: str | None = None, job_id: str | None = None, session_id: str | None = None) -> str | None:
+        if not (conversation_url or "").startswith("https://chatgpt.com/c/"):
+            return None
+        ts = now()
+        with self.connect() as conn:
+            row = conn.execute("SELECT cleanup_id FROM remote_cleanup_queue WHERE conversation_url=? AND status='pending'", (conversation_url,)).fetchone()
+            if row:
+                return row["cleanup_id"]
+            cid = new_id("cln")
+            conn.execute("""INSERT INTO remote_cleanup_queue(cleanup_id, conversation_url, project, job_id, session_id, reason, retention, status, created_at, updated_at)
+            VALUES(?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""", (cid, conversation_url, redact_text(project), job_id, session_id, redact_text(reason), retention, ts, ts))
+            return cid
+
+    def list_remote_cleanup(self, status: str | None = None, project: str | None = None, limit: int = 50, cleanup_id: str | None = None) -> list[dict[str, Any]]:
+        limit = max(1, min(int(limit), 200))
+        clauses, params = [], []
+        if cleanup_id:
+            clauses.append("cleanup_id=?"); params.append(cleanup_id)
+        if status:
+            clauses.append("status=?"); params.append(status)
+        if project:
+            clauses.append("project=?"); params.append(redact_text(project))
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        with self.connect() as conn:
+            rows = conn.execute(f"SELECT * FROM remote_cleanup_queue{where} ORDER BY created_at ASC LIMIT ?", (*params, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+    def update_remote_cleanup(self, cleanup_id: str, *, status: str, error: str | None = None) -> None:
+        with self.connect() as conn:
+            conn.execute("UPDATE remote_cleanup_queue SET status=?, error_redacted=?, updated_at=? WHERE cleanup_id=?", (status, redact_text(error), now(), cleanup_id))
+
+    def remote_cleanup_stats(self) -> dict[str, int]:
+        with self.connect() as conn:
+            rows = conn.execute("SELECT status, COUNT(*) AS n FROM remote_cleanup_queue GROUP BY status").fetchall()
+        return {r["status"]: int(r["n"]) for r in rows}
 
     def delete_session(self, session_id: str) -> bool:
         with self.connect() as conn:

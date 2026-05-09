@@ -45,7 +45,7 @@ In WSL, if Linux Chromium cannot launch because host libraries are missing, the 
 
 ### Storage
 
-SQLite tables: `browser_profiles`, `project_threads`, `web_sessions`, `messages`, `jobs`, `browser_events`, `backend_runs`, and `settings`. `project_threads` stores explicit project -> latest conversation pointers separately from local audit sessions.
+SQLite tables: `browser_profiles`, `project_threads`, `web_sessions`, `messages`, `jobs`, `browser_events`, `backend_runs`, `remote_cleanup_queue`, and `settings`. `project_threads` stores explicit project -> latest conversation pointers separately from local audit sessions.
 
 ### UI adapters
 
@@ -67,4 +67,4 @@ Playwright selectors are centralized in `config/selectors.yaml`. Model labels ar
 
 ### Local and remote cleanup
 
-Local records can be deleted with `delete_local_record` / `gpt-brain-web records delete`. Project audit data can be purged with `purge_project_records`. Remote ChatGPT conversation deletion is deliberately guarded: `delete_remote_conversation` only accepts explicit `https://chatgpt.com/c/...` URLs and requires confirmation.
+Local records can be deleted with `delete_local_record` / `gpt-brain-web records delete`. Project audit data can be purged with `purge_project_records`. Remote ChatGPT conversation deletion is deliberately guarded: `delete_remote_conversation` only accepts explicit `https://chatgpt.com/c/...` URLs and requires confirmation. Ephemeral/job conversations are queued in `remote_cleanup_queue`; `cleanup_remote=true` processes the specific queued item immediately, while `cleanup_remote_conversations` can dry-run or process queued cleanup later. Persistent records are skipped by bulk cleanup.

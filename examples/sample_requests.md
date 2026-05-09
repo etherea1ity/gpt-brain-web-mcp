@@ -81,4 +81,21 @@ Then poll:
 ## Guarded remote cleanup
 ```json
 { "conversation_url": "https://chatgpt.com/c/...", "confirm": true }
+
+## Ephemeral request with immediate remote cleanup
+
+```json
+{
+  "question": "Reply with exactly: OK",
+  "conversation_strategy": "new",
+  "retention": "ephemeral",
+  "cleanup_remote": true
+}
+```
+
+## Remote cleanup queue
+
+```json
+{ "status": "pending", "limit": 20 }
+```
 ```

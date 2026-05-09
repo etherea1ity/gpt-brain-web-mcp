@@ -145,6 +145,9 @@ Restart Codex after changing MCP config.
 - `delete_local_record`
 - `purge_project_records`
 - `delete_remote_conversation`
+- `list_remote_cleanup`
+- `cleanup_remote_conversations`
+- `ui_capabilities_check`
 - `open_login_window`
 - `doctor`
 - `cleanup_browser`
@@ -161,6 +164,8 @@ The gateway treats `project` as the routing key **only when the MCP caller expli
 - `conversation_strategy="resume_session"` plus `session_id` resumes a stored local session URL.
 - `conversation_strategy="resume_url"` plus `conversation_url` resumes an explicit ChatGPT `/c/...` URL.
 - `save_session=false` by default. Set `save_session=true` only when you want a local SQLite audit record.
+- `retention` controls ChatGPT-side clutter: omitted project defaults to `ephemeral`, explicit project defaults to `persistent`, and research defaults to `job`.
+- `cleanup_remote=true` immediately deletes the created ChatGPT `/c/...` conversation after extracting the answer. Without it, ephemeral/job conversations are queued for later cleanup.
 - `start_research` always uses an isolated job conversation so Deep Research / web research does not pollute normal project threads.
 
 For real ChatGPT Projects, the browser adapter opens the dedicated sidebar, expands `More -> Projects` when necessary, and clicks an existing project row. It does not auto-create projects or upload project files.
@@ -175,6 +180,8 @@ For real ChatGPT Projects, the browser adapter opens the dedicated sidebar, expa
   "web_search": false,
   "async": false,
   "save_session": false,
+  "retention": "ephemeral when project omitted; persistent when project is explicit",
+  "cleanup_remote": false,
   "conversation_strategy": "new when project omitted; reuse_project when project is explicit"
 }
 ```
@@ -203,7 +210,14 @@ If `allow_pro=false`, requests for `pro` or `pro_extended` are downgraded/warned
 
 ## ask_web
 
-`ask_web` enables ChatGPT web/search capability if visible in the UI. Sources/citations are extracted best-effort. If sources are missing, the response includes a warning.
+`ask_web` opens the composer `+` menu and enables ChatGPT Search/Web Search when visible. It then submits a source-oriented prompt and extracts citations best-effort. If the UI control or sources are missing, the response includes a warning instead of pretending.
+
+Check the live UI without sending a prompt:
+
+```bash
+gpt-brain-web ui-check
+# or MCP: ui_capabilities_check
+```
 
 ## Async jobs and research heartbeat
 
@@ -235,7 +249,21 @@ Remote ChatGPT conversation deletion is explicit and guarded:
 gpt-brain-web records delete-remote https://chatgpt.com/c/... --confirm
 ```
 
-The remote delete command only accepts explicit `https://chatgpt.com/c/...` URLs and requires `--confirm`.
+For smoke/live/test calls, prefer automatic cleanup:
+
+```json
+{ "question": "...", "conversation_strategy": "new", "retention": "ephemeral", "cleanup_remote": true }
+```
+
+Or process the queue later:
+
+```bash
+gpt-brain-web records cleanup-list --status pending
+gpt-brain-web records cleanup-remote --dry-run
+gpt-brain-web records cleanup-remote --confirm
+```
+
+The remote delete path only accepts explicit `https://chatgpt.com/c/...` URLs, skips `persistent` records, and requires confirmation for actual deletion.
 
 ## Running tests
 

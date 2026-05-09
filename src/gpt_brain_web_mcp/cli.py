@@ -167,7 +167,7 @@ def cmd_smoke(args: argparse.Namespace) -> int:
         os.environ["GPT_BRAIN_WEB_MOCK"] = "1"
     settings = Settings.from_env()
     svc = WebBrainService(settings)
-    result = svc.tool_ask_brain(question="Reply with exactly: GPT_BRAIN_WEB_SMOKE_OK", save_session=False, conversation_strategy="new")
+    result = svc.tool_ask_brain(question="Reply with exactly: GPT_BRAIN_WEB_SMOKE_OK", save_session=False, conversation_strategy="new", retention="ephemeral", cleanup_remote=bool(os.getenv("RUN_LIVE_CHATGPT_WEB")))
     ok = str(result.get("answer", "")).strip() == "GPT_BRAIN_WEB_SMOKE_OK"
     _print_json({"ok": ok, "mode": "live" if os.getenv("RUN_LIVE_CHATGPT_WEB") else "mock", "result": result})
     return 0 if ok else 1
@@ -177,6 +177,13 @@ def cmd_cleanup(args: argparse.Namespace) -> int:
     svc = WebBrainService(Settings.from_env())
     _print_json(svc.cleanup_browser())
     return 0
+
+
+def cmd_ui_check(args: argparse.Namespace) -> int:
+    svc = WebBrainService(Settings.from_env())
+    result = svc.ui_capabilities_check(visible=args.visible)
+    _print_json(result)
+    return 0 if result.get("ok") else 1
 
 
 def cmd_records(args: argparse.Namespace) -> int:
@@ -189,6 +196,10 @@ def cmd_records(args: argparse.Namespace) -> int:
         _print_json(svc.purge_project_records(args.project, args.include_thread)); return 0
     if args.records_cmd == "delete-remote":
         _print_json(svc.delete_remote_conversation(args.conversation_url, args.confirm)); return 0
+    if args.records_cmd == "cleanup-list":
+        _print_json(svc.list_remote_cleanup(args.status, args.project, args.limit)); return 0
+    if args.records_cmd == "cleanup-remote":
+        _print_json(svc.cleanup_remote_conversations(confirm=args.confirm, dry_run=args.dry_run, status=args.status, project=args.project, limit=args.limit, cleanup_id=args.cleanup_id)); return 0
     raise SystemExit(f"unknown records command {args.records_cmd}")
 
 
@@ -235,6 +246,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("smoke", help="Run mock smoke unless RUN_LIVE_CHATGPT_WEB=1").set_defaults(func=cmd_smoke)
     sub.add_parser("cleanup", help="Close browser worker but preserve profile").set_defaults(func=cmd_cleanup)
+    ui = sub.add_parser("ui-check", help="Check Deep Research and Search UI without sending a prompt")
+    ui.add_argument("--visible", action="store_true")
+    ui.set_defaults(func=cmd_ui_check)
     records = sub.add_parser("records", help="List/delete local SQLite session/job records")
     records_sub = records.add_subparsers(dest="records_cmd", required=True)
     rlist = records_sub.add_parser("list")
@@ -254,6 +268,19 @@ def build_parser() -> argparse.ArgumentParser:
     rremote.add_argument("conversation_url")
     rremote.add_argument("--confirm", action="store_true", help="Required; confirms remote deletion in ChatGPT Web UI")
     rremote.set_defaults(func=cmd_records)
+    rclist = records_sub.add_parser("cleanup-list", help="List queued remote ChatGPT conversation cleanup items")
+    rclist.add_argument("--status", default=None)
+    rclist.add_argument("--project")
+    rclist.add_argument("--limit", type=int, default=50)
+    rclist.set_defaults(func=cmd_records)
+    rclean = records_sub.add_parser("cleanup-remote", help="Process queued remote ChatGPT conversation cleanup items")
+    rclean.add_argument("--confirm", action="store_true", help="Required for actual remote deletion")
+    rclean.add_argument("--dry-run", action="store_true", default=False, help="Preview deletions without touching ChatGPT")
+    rclean.add_argument("--status", default="pending")
+    rclean.add_argument("--project")
+    rclean.add_argument("--limit", type=int, default=20)
+    rclean.add_argument("--cleanup-id")
+    rclean.set_defaults(func=cmd_records)
     return p
 
 

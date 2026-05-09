@@ -15,27 +15,27 @@ def main() -> int:
     svc = WebBrainService()
     live_project = os.getenv("GPT_BRAIN_LIVE_PROJECT")
     cleanup_ids = []
-    report = {"ok": False, "steps": [], "cleanup": [], "live_project": live_project}
+    report = {"ok": False, "steps": [], "cleanup": [], "remote_cleanup": [], "live_project": live_project}
 
     doctor = svc.doctor(verbose=True)
     report["steps"].append({"name": "doctor", "ok": doctor.get("ok"), "result": doctor})
     if not doctor.get("ok"):
         print(json.dumps(report, indent=2, ensure_ascii=False)); return 1
 
-    ask = svc.tool_ask_brain(question="Reply with exactly: GPT_BRAIN_WEB_LIVE_OK", project=live_project, save_session=False, conversation_strategy="new")
+    ask = svc.tool_ask_brain(question="Reply with exactly: GPT_BRAIN_WEB_LIVE_OK", project=live_project, save_session=False, conversation_strategy="new", retention="ephemeral", cleanup_remote=True)
     ask_ok = "GPT_BRAIN_WEB_LIVE_OK" in str(ask.get("answer"))
     report["steps"].append({"name": "ask_brain", "ok": ask_ok, "result": ask})
     if not ask_ok:
         print(json.dumps(report, indent=2, ensure_ascii=False)); return 1
 
-    web = svc.tool_ask_web(question="Search the web for today's date and reply in one sentence with at least one source URL.", project=live_project, save_session=False, conversation_strategy="new")
+    web = svc.tool_ask_web(question="Search the web for today's date and reply in one sentence with at least one source URL.", project=live_project, save_session=False, conversation_strategy="new", retention="ephemeral", cleanup_remote=True)
     web_ok = bool(web.get("answer")) and bool(web.get("sources"))
     report["steps"].append({"name": "ask_web", "ok": web_ok, "result": web})
     if not web_ok:
         print(json.dumps(report, indent=2, ensure_ascii=False)); return 1
 
     research_timeout = int(os.getenv("GPT_BRAIN_LIVE_RESEARCH_TIMEOUT_SECONDS", "900"))
-    started = svc.start_research(topic="Using web sources, in one short paragraph summarize what the Model Context Protocol is and cite source URLs.", project=live_project, output_format="bullet_summary", max_runtime_hint_minutes=max(5, research_timeout // 60))
+    started = svc.start_research(topic="Using web sources, in one short paragraph summarize what the Model Context Protocol is and cite source URLs.", project=live_project, output_format="bullet_summary", max_runtime_hint_minutes=max(5, research_timeout // 60), retention="ephemeral", cleanup_remote=True)
     job_id = started["job_id"]
     cleanup_ids.append(job_id)
     result = None
@@ -66,6 +66,7 @@ def main() -> int:
     )
     report["steps"].append({"name": "start_research", "ok": research_ok, "started": started, "result": result})
     report["ok"] = all(step.get("ok") for step in report["steps"] if step.get("name") != "research_status")
+    report["remote_cleanup"].append(svc.cleanup_remote_conversations(confirm=True, dry_run=False, limit=20))
     for rid in cleanup_ids:
         report["cleanup"].append(svc.delete_local_record(rid))
     print(json.dumps(report, indent=2, ensure_ascii=False))

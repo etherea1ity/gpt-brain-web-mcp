@@ -10,6 +10,7 @@ DEFAULT_TIER = "thinking_heavy"
 THINKING_TIERS = ("thinking_heavy", "thinking_extended", "thinking_normal")
 PRO_TIERS = ("pro", "pro_extended")
 ALL_TIERS = THINKING_TIERS + PRO_TIERS
+RETENTION_POLICIES = ("ephemeral", "job", "persistent")
 
 
 class BrainWebError(RuntimeError): ...
@@ -36,6 +37,8 @@ class BrainRequest:
     resume_session_id: str | None = None
     resume_conversation_url: str | None = None
     requested_research_mode: str | None = None
+    retention: str = "ephemeral"
+    cleanup_remote: bool = False
 
 
 @dataclass(slots=True)
@@ -57,6 +60,10 @@ class BrainResult:
     conversation_strategy: str = "reuse_project"
     recovery_action: str | None = None
     recovery_reason: str | None = None
+    retention: str = "ephemeral"
+    cleanup_remote: bool = False
+    cleanup_remote_status: str | None = None
+    cleanup_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -95,3 +102,10 @@ def fallback_sequence(requested_tier: str, allow_pro: bool) -> tuple[list[str], 
     if requested_tier == "thinking_normal":
         return ["thinking_normal"], warnings
     return ["thinking_heavy", "thinking_extended", "thinking_normal"], warnings
+
+
+def normalize_retention(value: str | None, *, project_explicit: bool = False, default: str | None = None) -> str:
+    retention = (value or default or ("persistent" if project_explicit else "ephemeral")).strip().lower()
+    if retention not in RETENTION_POLICIES:
+        raise ValueError(f"Unsupported retention {retention!r}; expected one of {', '.join(RETENTION_POLICIES)}")
+    return retention

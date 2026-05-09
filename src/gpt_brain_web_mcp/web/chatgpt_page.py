@@ -16,6 +16,7 @@ class MockChatGPTPage:
     generation_running: bool = False
     sources: list[dict] = field(default_factory=list)
     deep_research_available: bool = False
+    web_search_available: bool = True
 
     def select_mode_label(self, label: str) -> bool:
         if label in self.available_mode_labels:
@@ -36,6 +37,18 @@ class MockChatGPTPage:
 
     def delete_current_conversation(self) -> bool:
         self.conversation_url = None
+        return True
+
+    def check_deep_research_ui(self) -> dict:
+        return {"available": bool(self.deep_research_available), "enabled": bool(self.deep_research_available), "pill_detected": bool(self.deep_research_available), "warnings": [] if self.deep_research_available else ["Deep Research UI not available in mock page."]}
+
+    def check_web_search_ui(self) -> dict:
+        return {"available": bool(self.web_search_available), "enabled": bool(self.web_search_available), "pill_detected": bool(self.web_search_available), "warnings": [] if self.web_search_available else ["Web Search UI not available in mock page."]}
+
+    def enable_web_search(self) -> bool:
+        return bool(self.web_search_available)
+
+    def disable_web_search(self) -> bool:
         return True
 
     def submit_prompt(self, prompt: str, *, web_search: bool = False) -> None:
@@ -198,7 +211,9 @@ class ChatGPTPage:
         This intentionally does not fake success. It only returns true when a
         visible control with a known Deep Research label can be clicked.
         """
-        self._open_composer_plus_menu()
+        if not self._open_composer_plus_menu():
+            self.deep_research_available = False
+            return False
         labels = ["Deep research", "Deep Research"]
         for label in labels:
             try:
@@ -219,6 +234,86 @@ class ChatGPTPage:
             except Exception:
                 continue
         return False
+
+
+    def _visible_pill_or_button(self, labels: list[str]) -> bool:
+        for label in labels:
+            for make in (
+                lambda label=label: self.page.get_by_label(label, exact=False).last,
+                lambda label=label: self.page.get_by_role("button", name=label, exact=False).last,
+                lambda label=label: self.page.get_by_text(label, exact=False).last,
+            ):
+                try:
+                    loc = make()
+                    if loc.count() > 0 and loc.is_visible(timeout=500):
+                        return True
+                except Exception:
+                    continue
+        return False
+
+    def enable_web_search(self) -> bool:
+        if not self._open_composer_plus_menu():
+            self.web_search_available = False
+            return False
+        for label in ["Search", "Search the web", "Web search", "Browse"]:
+            try:
+                self.page.get_by_text(label, exact=True).last.click(timeout=2500)
+                self.page.wait_for_timeout(500)
+                self.web_search_available = True
+                return True
+            except Exception:
+                continue
+            try:
+                self.page.get_by_role("button", name=label, exact=False).last.click(timeout=2500)
+                self.page.wait_for_timeout(500)
+                self.web_search_available = True
+                return True
+            except Exception:
+                continue
+        self.web_search_available = False
+        return False
+
+    def disable_web_search(self) -> bool:
+        for label in ["Search, click to remove", "Web search, click to remove", "Search the web, click to remove"]:
+            try:
+                self.page.get_by_label(label).last.click(timeout=1500)
+                self.page.wait_for_timeout(300)
+                return True
+            except Exception:
+                continue
+        try:
+            buttons = self.page.locator("button").filter(has_text="Search")
+            if buttons.count() > 0:
+                buttons.last.click(timeout=1500)
+                self.page.wait_for_timeout(300)
+                return True
+        except Exception:
+            pass
+        return False
+
+    def check_deep_research_ui(self) -> dict:
+        warnings: list[str] = []
+        available = self.enable_deep_research()
+        pill = self._visible_pill_or_button(["Deep research", "Deep Research"])
+        if available and not pill:
+            warnings.append("Deep Research control clicked, but active pill was not detected.")
+        if not available:
+            warnings.append("Deep Research UI not visible from composer plus menu.")
+        if available:
+            self.disable_deep_research()
+        return {"available": available, "enabled": available, "pill_detected": pill, "warnings": warnings}
+
+    def check_web_search_ui(self) -> dict:
+        warnings: list[str] = []
+        available = self.enable_web_search()
+        pill = self._visible_pill_or_button(["Search", "Web search", "Search the web", "Browse"])
+        if available and not pill:
+            warnings.append("Search control clicked, but active search pill was not detected.")
+        if not available:
+            warnings.append("Search/Web Search UI not visible from composer plus menu.")
+        if available:
+            self.disable_web_search()
+        return {"available": available, "enabled": available, "pill_detected": pill, "warnings": warnings}
 
     def open_project(self, project_name: str) -> bool:
         """Open an existing ChatGPT Project from the dedicated sidebar.

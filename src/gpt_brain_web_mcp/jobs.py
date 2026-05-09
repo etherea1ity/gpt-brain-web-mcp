@@ -33,6 +33,8 @@ class JobManager:
         resume_conversation_url: str | None = None,
         project_explicit: bool = False,
         allow_project_fallback: bool = False,
+        retention: str = "ephemeral",
+        cleanup_remote: bool = False,
     ) -> JobStartResult:
         jid = self.store.create_job(project, "ask_web" if web_search else "ask", tier, None)
         self.futures[jid] = self.executor.submit(
@@ -49,6 +51,8 @@ class JobManager:
             resume_conversation_url,
             project_explicit,
             allow_project_fallback,
+            retention,
+            cleanup_remote,
         )
         return JobStartResult(jid, "queued", "Ask job queued.", now())
 
@@ -66,6 +70,8 @@ class JobManager:
         resume_conversation_url: str | None,
         project_explicit: bool,
         allow_project_fallback: bool,
+        retention: str,
+        cleanup_remote: bool,
     ) -> None:
         if self._is_cancelled(jid):
             self.store.update_job(jid, status="cancelled"); return
@@ -94,6 +100,8 @@ class JobManager:
                     conversation_key=jid,
                     resume_session_id=resume_session_id,
                     resume_conversation_url=resume_conversation_url,
+                    retention=retention,
+                    cleanup_remote=cleanup_remote,
                 )
                 backend = WebChatGPTBackend(self.service.settings, self.store, browser)
                 res = backend.ask_web(req, session_id) if web_search else backend.ask_brain(req, session_id)
@@ -104,12 +112,20 @@ class JobManager:
                 browser.stop_browser()
                 with self.lock:
                     self.worker_browsers.pop(jid, None)
+            cleanup_warning = None
+            if res.conversation_url and (retention in {"ephemeral", "job"} or cleanup_remote) and conversation_strategy == "new":
+                cid = self.store.enqueue_remote_cleanup(res.conversation_url, reason="async_ask_result", retention=retention, project=project, job_id=jid, session_id=session_id)
+                if cleanup_remote and cid:
+                    cleanup_warning = self._process_job_cleanup(cid, res.conversation_url, retention)
+            elif res.conversation_url and cleanup_remote:
+                cleanup_warning = "Remote cleanup skipped because async ask reused/resumed an existing ChatGPT conversation."
             if session_id:
                 self.store.update_session(session_id, resolved_tier=res.resolved_tier, conversation_url=res.conversation_url, summary=res.answer[:500])
                 self.store.add_message(session_id, "assistant", res.answer)
             status = "completed" if res.answer else "needs_user_action"
             error = None if res.answer else "ChatGPT requires user action or returned no answer"
-            self.store.update_job(jid, status=status, resolved_tier=res.resolved_tier, conversation_url=res.conversation_url, result_redacted=res.answer, error_redacted=error, warnings_json=res.warnings, sources_json=res.sources)
+            final_warnings = res.warnings + ([cleanup_warning] if cleanup_warning else [])
+            self.store.update_job(jid, status=status, resolved_tier=res.resolved_tier, conversation_url=res.conversation_url, result_redacted=res.answer, error_redacted=error, warnings_json=final_warnings, sources_json=res.sources)
         except Exception as exc:
             if self._is_cancelled(jid):
                 self.store.update_job(jid, status="cancelled")
@@ -119,16 +135,16 @@ class JobManager:
             with self.lock:
                 self.futures.pop(jid, None)
 
-    def start_research(self, topic: str, project: str | None, context: str | None, tier: str, allow_pro: bool, deep_research: bool, output_format: str, max_runtime_hint_minutes: int, project_explicit: bool = False, allow_project_fallback: bool = False) -> JobStartResult:
+    def start_research(self, topic: str, project: str | None, context: str | None, tier: str, allow_pro: bool, deep_research: bool, output_format: str, max_runtime_hint_minutes: int, project_explicit: bool = False, allow_project_fallback: bool = False, retention: str = "job", cleanup_remote: bool = False) -> JobStartResult:
         jid = self.store.create_job(project, "research", tier, "deep_research" if deep_research else "web_research_prompt")
-        self.futures[jid] = self.executor.submit(self._run_research, jid, topic, project, context, tier, allow_pro, deep_research, output_format, max_runtime_hint_minutes, project_explicit, allow_project_fallback)
+        self.futures[jid] = self.executor.submit(self._run_research, jid, topic, project, context, tier, allow_pro, deep_research, output_format, max_runtime_hint_minutes, project_explicit, allow_project_fallback, retention, cleanup_remote)
         return JobStartResult(jid, "queued", "Research job queued.", now())
 
     def _is_cancelled(self, jid: str) -> bool:
         with self.lock:
             return jid in self.cancelled
 
-    def _run_research(self, jid: str, topic: str, project: str | None, context: str | None, tier: str, allow_pro: bool, deep_research: bool, output_format: str, max_runtime_hint_minutes: int, project_explicit: bool, allow_project_fallback: bool) -> None:
+    def _run_research(self, jid: str, topic: str, project: str | None, context: str | None, tier: str, allow_pro: bool, deep_research: bool, output_format: str, max_runtime_hint_minutes: int, project_explicit: bool, allow_project_fallback: bool, retention: str, cleanup_remote: bool) -> None:
         if self._is_cancelled(jid):
             self.store.update_job(jid, status="cancelled"); return
         self.store.update_job(jid, status="running")
@@ -153,17 +169,17 @@ class JobManager:
                     "Return the final answer directly now. Do not narrate that you will verify, search, or research later.\n"
                     "Include executive summary, evidence table when useful, recommendation, risks/unknowns, sources, and next steps."
                 )
-                req = BrainRequest(question=prompt, project=project, context=context, tier=tier, allow_pro=allow_pro, web_search=True, save_session=False, conversation_kind="job", conversation_key=jid, conversation_strategy="new", project_explicit=project_explicit, allow_project_fallback=allow_project_fallback, requested_research_mode=requested_mode)
+                req = BrainRequest(question=prompt, project=project, context=context, tier=tier, allow_pro=allow_pro, web_search=True, save_session=False, conversation_kind="job", conversation_key=jid, conversation_strategy="new", project_explicit=project_explicit, allow_project_fallback=allow_project_fallback, requested_research_mode=requested_mode, retention=retention, cleanup_remote=cleanup_remote)
                 try:
                     res = WebChatGPTBackend(self.service.settings, self.store, browser).ask_web(req, None)
                 except TimeoutError:
                     if requested_mode != "deep_research":
                         raise
                     warnings.append("Deep Research did not complete before timeout; used web research fallback.")
-                    res, browser = self._run_web_research_fallback(browser, jid, prompt, project, context, tier, allow_pro, project_explicit, allow_project_fallback, BrowserSessionManager, WebChatGPTBackend)
+                    res, browser = self._run_web_research_fallback(browser, jid, prompt, project, context, tier, allow_pro, project_explicit, allow_project_fallback, retention, cleanup_remote, BrowserSessionManager, WebChatGPTBackend)
                 if requested_mode == "deep_research" and self._bad_research_answer(getattr(res, "answer", "")):
                     warnings.append("Deep Research returned no usable final answer; used web research fallback.")
-                    res, browser = self._run_web_research_fallback(browser, jid, prompt, project, context, tier, allow_pro, project_explicit, allow_project_fallback, BrowserSessionManager, WebChatGPTBackend)
+                    res, browser = self._run_web_research_fallback(browser, jid, prompt, project, context, tier, allow_pro, project_explicit, allow_project_fallback, retention, cleanup_remote, BrowserSessionManager, WebChatGPTBackend)
                 if self._is_cancelled(jid):
                     self.store.update_job(jid, status="cancelled", resolved_tier=res.resolved_tier, resolved_research_mode=res.resolved_research_mode or requested_mode, conversation_url=res.conversation_url, warnings_json=res.warnings + warnings, sources_json=res.sources)
                     return
@@ -175,6 +191,13 @@ class JobManager:
             if not res.answer and any("login" in w.lower() or "prompt box" in w.lower() for w in all_warnings):
                 self.store.update_job(jid, status="needs_user_action", resolved_tier=res.resolved_tier, resolved_research_mode=res.resolved_research_mode or requested_mode, conversation_url=res.conversation_url, error_redacted="ChatGPT requires user action", warnings_json=all_warnings, sources_json=res.sources)
                 return
+            cleanup_warning = None
+            if res.conversation_url and (retention in {"ephemeral", "job"} or cleanup_remote):
+                cid = self.store.enqueue_remote_cleanup(res.conversation_url, reason="research_result", retention=retention, project=project, job_id=jid)
+                if cleanup_remote and cid:
+                    cleanup_warning = self._process_job_cleanup(cid, res.conversation_url, retention)
+                    if cleanup_warning:
+                        all_warnings.append(cleanup_warning)
             artifact = self._write_artifact(jid, topic, res.answer, res.sources, all_warnings)
             self.store.update_job(jid, status="completed", resolved_tier=res.resolved_tier, resolved_research_mode=res.resolved_research_mode or requested_mode, conversation_url=res.conversation_url, artifact_path=str(artifact), result_redacted=res.answer, warnings_json=all_warnings, sources_json=res.sources)
         except Exception as exc:
@@ -193,7 +216,7 @@ class JobManager:
         bad_prefixes = ("error in message stream", "retry", "something went wrong")
         return low.startswith(bad_prefixes) or low in {"error", "retry"}
 
-    def _run_web_research_fallback(self, browser, jid: str, prompt: str, project: str | None, context: str | None, tier: str, allow_pro: bool, project_explicit: bool, allow_project_fallback: bool, BrowserSessionManager, WebChatGPTBackend):
+    def _run_web_research_fallback(self, browser, jid: str, prompt: str, project: str | None, context: str | None, tier: str, allow_pro: bool, project_explicit: bool, allow_project_fallback: bool, retention: str, cleanup_remote: bool, BrowserSessionManager, WebChatGPTBackend):
         try:
             browser.stop_browser()
         except Exception:
@@ -201,8 +224,31 @@ class JobManager:
         browser = BrowserSessionManager(self.service.settings, self.store)
         with self.lock:
             self.worker_browsers[jid] = browser
-        fallback_req = BrainRequest(question=prompt, project=project, context=context, tier=tier, allow_pro=allow_pro, web_search=True, save_session=False, conversation_kind="job", conversation_key=jid, conversation_strategy="new", project_explicit=project_explicit, allow_project_fallback=allow_project_fallback, requested_research_mode="web_research_prompt")
+        fallback_req = BrainRequest(question=prompt, project=project, context=context, tier=tier, allow_pro=allow_pro, web_search=True, save_session=False, conversation_kind="job", conversation_key=jid, conversation_strategy="new", project_explicit=project_explicit, allow_project_fallback=allow_project_fallback, requested_research_mode="web_research_prompt", retention=retention, cleanup_remote=cleanup_remote)
         return WebChatGPTBackend(self.service.settings, self.store, browser).ask_web(fallback_req, None), browser
+
+
+    def _process_job_cleanup(self, cleanup_id: str, conversation_url: str, retention: str) -> str:
+        if retention == "persistent":
+            self.store.update_remote_cleanup(cleanup_id, status="skipped", error="persistent retention")
+            return "Remote cleanup skipped for persistent retention."
+        try:
+            from .web.browser_manager import BrowserSessionManager
+            browser = BrowserSessionManager(self.service.settings, self.store)
+            try:
+                page = browser.navigate_to_conversation(conversation_url)
+                page.ensure_logged_in()
+                deleted = bool(getattr(page, "delete_current_conversation")())
+            finally:
+                browser.stop_browser()
+            if deleted:
+                self.store.update_remote_cleanup(cleanup_id, status="deleted")
+                return "Remote cleanup status: deleted."
+            self.store.update_remote_cleanup(cleanup_id, status="failed", error="remote_delete_failed")
+            return "Remote cleanup status: failed."
+        except Exception as exc:
+            self.store.update_remote_cleanup(cleanup_id, status="failed", error=str(exc))
+            return f"Remote cleanup status: failed ({redact_text(str(exc))})."
 
     def _write_artifact(self, jid: str, topic: str, answer: str, sources: list[dict[str, Any]], warnings: list[str]) -> Path:
         path = self.artifact_dir / f"{jid}.md"

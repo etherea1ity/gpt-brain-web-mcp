@@ -32,7 +32,7 @@ Update mode labels in `config/model_modes.yaml` or selectors in `config/selector
 
 ## Deep Research not found
 
-This is expected for accounts/UI states where Deep Research is unavailable. `start_research` falls back to a Web Research prompt and records a warning.
+Run `gpt-brain-web ui-check` to inspect the composer `+` menu without sending a prompt. If Deep Research is unavailable for the account/UI state, `start_research` falls back to a Web Research prompt and records a warning. The adapter also tries to remove the Deep Research pill after use so later normal asks do not inherit the mode.
 
 ## Headless unstable
 
@@ -101,7 +101,15 @@ Long jobs emit heartbeat events while ChatGPT is thinking. If no progress is obs
 
 ## Remote cleanup
 
-Use `gpt-brain-web records delete <job_id>` for local SQLite cleanup. To delete a ChatGPT web conversation, pass the exact `/c/...` URL and `--confirm`:
+Use `gpt-brain-web records delete <job_id>` for local SQLite cleanup. Ephemeral/job ChatGPT conversations are queued for remote cleanup; inspect/process them with:
+
+```bash
+gpt-brain-web records cleanup-list --status pending
+gpt-brain-web records cleanup-remote --dry-run
+gpt-brain-web records cleanup-remote --confirm
+```
+
+To delete one ChatGPT web conversation directly, pass the exact `/c/...` URL and `--confirm`:
 
 ```bash
 gpt-brain-web records delete-remote https://chatgpt.com/c/... --confirm

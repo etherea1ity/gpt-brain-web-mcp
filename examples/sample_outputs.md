@@ -58,3 +58,27 @@
   "warnings": ["ChatGPT prompt box not detectable; run `gpt-brain-web login` or update selectors.yaml."]
 }
 ```
+
+
+## Ephemeral cleanup result
+
+```json
+{
+  "answer": "OK",
+  "conversation_url": "https://chatgpt.com/c/...",
+  "retention": "ephemeral",
+  "cleanup_remote": true,
+  "cleanup_remote_status": "deleted",
+  "cleanup_id": "cln_..."
+}
+```
+
+## UI capability check
+
+```json
+{
+  "ok": true,
+  "deep_research": {"available": true, "pill_detected": true, "warnings": []},
+  "web_search": {"available": true, "pill_detected": true, "warnings": []}
+}
+```

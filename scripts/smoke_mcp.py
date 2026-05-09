@@ -21,6 +21,9 @@ EXPECTED = {
     "delete_local_record",
     "purge_project_records",
     "delete_remote_conversation",
+    "list_remote_cleanup",
+    "cleanup_remote_conversations",
+    "ui_capabilities_check",
     "list_web_sessions",
     "open_login_window",
     "doctor",
@@ -72,6 +75,8 @@ async def _run() -> dict[str, Any]:
                     "question": f"Reply with exactly: {nonce}",
                     "save_session": False,
                     "conversation_strategy": "new",
+                    "retention": "ephemeral",
+                    "cleanup_remote": live,
                 },
             )
             decoded = _decode_tool_result(call)
