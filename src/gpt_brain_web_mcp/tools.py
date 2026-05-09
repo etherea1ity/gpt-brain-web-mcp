@@ -128,7 +128,7 @@ class WebBrainService:
         raw_project = kwargs.get("project")
         project_explicit = raw_project is not None and str(raw_project).strip() != ""
         retention = self._request_retention(kwargs, project_explicit=project_explicit, default="job")
-        cleanup_remote = bool(kwargs.get("cleanup_remote", False))
+        cleanup_remote = bool(kwargs.get("cleanup_remote", retention in {"ephemeral", "job"}))
         started = self.jobs.start_research(redact_text(kwargs["topic"]), self._effective_project(raw_project), redact_text(kwargs.get("context")) if kwargs.get("context") else None, normalize_tier(kwargs.get("tier") or self.settings.default_tier), bool(kwargs.get("allow_pro", self.settings.allow_pro_default)), bool(kwargs.get("deep_research", True)), kwargs.get("output_format", "report"), int(kwargs.get("max_runtime_hint_minutes", 30)), project_explicit, bool(kwargs.get("allow_project_fallback", False)), retention, cleanup_remote)
         return started.to_dict()
 

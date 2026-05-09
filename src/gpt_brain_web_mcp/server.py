@@ -45,7 +45,7 @@ def create_mcp(service=None):
         return await runner.run("tool_ask_web", question=question, project=project, context=context, tier=tier, allow_pro=allow_pro, save_session=save_session, conversation_strategy=conversation_strategy, session_id=session_id, conversation_url=conversation_url, allow_project_fallback=allow_project_fallback, retention=retention, cleanup_remote=cleanup_remote)
 
     @mcp.tool()
-    async def start_research(topic: str, project: str | None = None, context: str | None = None, tier: str | None = None, allow_pro: bool = False, deep_research: bool = True, output_format: str = "report", max_runtime_hint_minutes: int = 30, allow_project_fallback: bool = False, retention: str | None = None, cleanup_remote: bool = False) -> dict[str, Any]:
+    async def start_research(topic: str, project: str | None = None, context: str | None = None, tier: str | None = None, allow_pro: bool = False, deep_research: bool = True, output_format: str = "report", max_runtime_hint_minutes: int = 30, allow_project_fallback: bool = False, retention: str | None = None, cleanup_remote: bool | None = None) -> dict[str, Any]:
         return await runner.run("start_research", topic=topic, project=project, context=context, tier=tier, allow_pro=allow_pro, deep_research=deep_research, output_format=output_format, max_runtime_hint_minutes=max_runtime_hint_minutes, allow_project_fallback=allow_project_fallback, retention=retention, cleanup_remote=cleanup_remote)
 
     @mcp.tool()

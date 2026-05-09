@@ -27,7 +27,7 @@ API fallback is not enabled by default. If implemented/configured later, it must
 
 ## Conversation retention
 
-`save_session=false` by default, so normal MCP calls do not create local message audit records unless requested. Explicit project thread pointers are stored separately from local sessions. Omitted-project calls default to `retention=ephemeral`; explicit project calls default to `retention=persistent`; research defaults to `retention=job`. Local records can be removed with `delete_local_record` / `records delete`; remote ChatGPT conversation deletion requires an explicit `https://chatgpt.com/c/...` URL and confirmation. Bulk cleanup skips persistent records and never touches browser profiles, passwords, or cookies outside the dedicated profile.
+`save_session=false` by default, so normal MCP calls do not create local message audit records unless requested. Explicit project thread pointers are stored separately from local sessions. Omitted-project calls default to `retention=ephemeral`; explicit project calls default to `retention=persistent`; research defaults to `retention=job` and deletes the remote ChatGPT conversation after the local result/artifact is saved unless `cleanup_remote=false` or `retention=persistent`. Local records can be removed with `delete_local_record` / `records delete`; remote ChatGPT conversation deletion requires an explicit `https://chatgpt.com/c/...` URL and confirmation. Bulk cleanup skips persistent records and never touches browser profiles, passwords, or cookies outside the dedicated profile.
 
 ## Project fallback safety
 

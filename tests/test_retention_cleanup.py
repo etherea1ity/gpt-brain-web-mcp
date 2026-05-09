@@ -86,3 +86,30 @@ def test_deep_research_fallback_flags_default_off(tmp_path, monkeypatch):
     monkeypatch.setenv("GPT_BRAIN_DEEP_RESEARCH_FALLBACK_ON_FAILURE", "true")
     assert jm._deep_research_timeout_fallback_enabled() is True
     assert jm._deep_research_failure_fallback_enabled() is True
+
+
+def test_research_defaults_cleanup_remote_for_job_retention(tmp_path):
+    svc = WebBrainService(Settings(home=tmp_path, mock_browser=True))
+    captured = {}
+    def fake_start_research(*args):
+        captured["retention"] = args[-2]
+        captured["cleanup_remote"] = args[-1]
+        from gpt_brain_web_mcp.models import JobStartResult
+        return JobStartResult("job_fake", "queued", "ok", "now")
+    svc.jobs.start_research = fake_start_research
+    out = svc.start_research(topic="x")
+    assert out["job_id"] == "job_fake"
+    assert captured == {"retention": "job", "cleanup_remote": True}
+
+
+def test_research_persistent_retention_does_not_default_cleanup_remote(tmp_path):
+    svc = WebBrainService(Settings(home=tmp_path, mock_browser=True))
+    captured = {}
+    def fake_start_research(*args):
+        captured["retention"] = args[-2]
+        captured["cleanup_remote"] = args[-1]
+        from gpt_brain_web_mcp.models import JobStartResult
+        return JobStartResult("job_fake", "queued", "ok", "now")
+    svc.jobs.start_research = fake_start_research
+    svc.start_research(topic="x", retention="persistent")
+    assert captured == {"retention": "persistent", "cleanup_remote": False}

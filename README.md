@@ -166,7 +166,7 @@ The gateway treats `project` as the routing key **only when the MCP caller expli
 - `save_session=false` by default. Set `save_session=true` only when you want a local SQLite audit record.
 - `retention` controls ChatGPT-side clutter: omitted project defaults to `ephemeral`, explicit project defaults to `persistent`, and research defaults to `job`.
 - `cleanup_remote=true` immediately deletes the created ChatGPT `/c/...` conversation after extracting the answer. Without it, ephemeral/job conversations are queued for later cleanup.
-- `start_research` always uses an isolated job conversation so Deep Research / web research does not pollute normal project threads.
+- `start_research` always uses an isolated job conversation so Deep Research / web research does not pollute normal project threads. For `retention=job`/`ephemeral`, the result is saved locally and the remote ChatGPT conversation is deleted after completion by default; set `cleanup_remote=false` or `retention=persistent` to keep it in ChatGPT.
 
 For real ChatGPT Projects, the browser adapter opens the dedicated sidebar, expands `More -> Projects` when necessary, and clicks an existing project row. It does not auto-create projects or upload project files.
 
@@ -221,7 +221,7 @@ gpt-brain-web ui-check
 
 ## Async jobs and research heartbeat
 
-`ask_brain` supports `async_request=true`; `start_research` is always asynchronous. Poll either with `get_job_result` or `get_research_result`.
+`ask_brain` supports `async_request=true`; `start_research` is always asynchronous. Poll either with `get_job_result` or `get_research_result`. When a research job completes with non-persistent retention, the markdown artifact and SQLite result are saved before the remote ChatGPT thread is deleted.
 
 Long jobs stay inside the workflow: the browser adapter records heartbeat events while waiting for ChatGPT output and can refresh once when no progress is observed. Useful knobs:
 
