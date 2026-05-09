@@ -160,11 +160,64 @@ class WebBrainService:
         return {"record_id": record_id, "deleted": deleted, "artifact_deleted": artifact_deleted, **details}
     def purge_project_records(self, project: str, include_thread: bool = False):
         return {"project": project, **self.store.purge_project_records(project, include_thread=include_thread)}
+    def list_projects(self, limit: int = 50):
+        page = self.browser.acquire_page("list_projects")
+        try:
+            page.ensure_logged_in()
+            projects = page.list_projects(limit) if hasattr(page, "list_projects") else []
+            return {"projects": projects, "limit": limit}
+        finally:
+            self.browser.release_page("list_projects")
+
+    def open_project(self, project: str):
+        page = self.browser.acquire_page("open_project")
+        try:
+            page.ensure_logged_in()
+            opened = bool(page.open_project(project))
+            return {"project": project, "opened": opened, "conversation_url": getattr(page, "current_conversation_url", lambda fallback=None: fallback)(None)}
+        finally:
+            self.browser.release_page("open_project")
+
+    def create_project(self, project: str, confirm: bool = False):
+        if not confirm:
+            return {"project": project, "created": False, "error": "confirm=true is required"}
+        page = self.browser.acquire_page("create_project")
+        try:
+            page.ensure_logged_in()
+            created = bool(page.create_project(project)) if hasattr(page, "create_project") else False
+            return {"project": project, "created": created}
+        finally:
+            self.browser.release_page("create_project")
+
+    def delete_remote_project(self, project: str, confirm: bool = False, confirm_name: str | None = None, purge_local: bool = False):
+        if not confirm or confirm_name != project:
+            return {"project": project, "deleted": False, "error": "confirm=true and confirm_name matching project are required"}
+        page = self.browser.acquire_page("delete_project")
+        try:
+            page.ensure_logged_in()
+            deleted = bool(page.delete_project(project)) if hasattr(page, "delete_project") else False
+            local = self.store.purge_project_records(project, include_thread=True) if deleted and purge_local else None
+            return {"project": project, "deleted": deleted, "local_purge": local}
+        finally:
+            self.browser.release_page("delete_project")
+
+    def start_project_conversation(self, project: str, question: str | None = None, tier: str | None = None, cleanup_remote: bool = False):
+        if question:
+            return self.tool_ask_brain(question=question, project=project, tier=tier, conversation_strategy="new", retention="persistent", cleanup_remote=cleanup_remote)
+        page = self.browser.acquire_page("start_project_conversation")
+        try:
+            page.ensure_logged_in()
+            ok = bool(page.start_new_chat(project))
+            return {"project": project, "started": ok, "conversation_url": getattr(page, "current_conversation_url", lambda fallback=None: fallback)(None)}
+        finally:
+            self.browser.release_page("start_project_conversation")
+
     def delete_remote_conversation(self, conversation_url: str, confirm: bool = False):
         if not confirm:
             return {"deleted": False, "error": "confirm=true is required", "conversation_url": conversation_url}
-        if not (conversation_url or "").startswith("https://chatgpt.com/c/"):
-            return {"deleted": False, "error": "Only explicit https://chatgpt.com/c/... URLs are supported.", "conversation_url": conversation_url}
+        url = conversation_url or ""
+        if not (url.startswith("https://chatgpt.com/c/") or (url.startswith("https://chatgpt.com/g/") and "/c/" in url)):
+            return {"deleted": False, "error": "Only explicit chatgpt.com conversation URLs containing /c/... are supported.", "conversation_url": conversation_url}
         page = self.browser.navigate_to_conversation(conversation_url)
         try:
             page.ensure_logged_in()
@@ -239,4 +292,4 @@ def get_service() -> WebBrainService:
     return _default
 
 def expected_tools():
-    return ["ask_brain", "ask_web", "start_research", "get_research_result", "get_job_result", "cancel_research_job", "delete_local_record", "purge_project_records", "delete_remote_conversation", "list_remote_cleanup", "cleanup_remote_conversations", "ui_capabilities_check", "list_web_sessions", "open_login_window", "doctor", "cleanup_browser", "daemon_status"]
+    return ["ask_brain", "ask_web", "start_research", "get_research_result", "get_job_result", "cancel_research_job", "list_projects", "open_project", "create_project", "start_project_conversation", "delete_remote_project", "delete_local_record", "purge_project_records", "delete_remote_conversation", "list_remote_cleanup", "cleanup_remote_conversations", "ui_capabilities_check", "list_web_sessions", "open_login_window", "doctor", "cleanup_browser", "daemon_status"]

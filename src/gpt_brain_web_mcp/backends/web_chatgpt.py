@@ -100,6 +100,12 @@ class WebChatGPTBackend(BrainBackend):
                     setattr(page, "progress_callback", _progress)
                 except Exception:
                     pass
+            if hasattr(page, "ensure_conversation_focus"):
+                target_url = conv if isinstance(conv, str) and conv.startswith("https://chatgpt.com/c/") else None
+                target_project = request.project if request.project_explicit and not target_url else None
+                if not page.ensure_conversation_focus(target_url, target_project):
+                    self.store.add_event("conversation_drift", f"Could not confirm target conversation before submit: url={target_url!r}, project={target_project!r}", job_id=request.conversation_key, session_id=session_id)
+                    raise NeedsUserAction("Could not confirm ChatGPT conversation/project focus before submit; refusing to send into a possibly wrong chat.")
             prompt = self._render_prompt(request, web_search)
             page.submit_prompt(prompt, web_search=web_search)
             answer = redact_text(self.results.extract_answer(page))

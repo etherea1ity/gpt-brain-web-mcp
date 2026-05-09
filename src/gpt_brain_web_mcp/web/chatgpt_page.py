@@ -31,6 +31,18 @@ class MockChatGPTPage:
     def open_project(self, project_name: str) -> bool:
         return bool(project_name)
 
+    def list_projects(self, limit: int = 50) -> list[str]:
+        return []
+
+    def create_project(self, project_name: str) -> bool:
+        return bool(project_name)
+
+    def delete_project(self, project_name: str) -> bool:
+        return bool(project_name)
+
+    def ensure_conversation_focus(self, conversation_url: str | None = None, project_name: str | None = None) -> bool:
+        return True
+
     def start_new_chat(self, project_name: str | None = None) -> bool:
         self.conversation_url = None
         return True
@@ -315,12 +327,76 @@ class ChatGPTPage:
             self.disable_web_search()
         return {"available": available, "enabled": available, "pill_detected": pill, "warnings": warnings}
 
-    def open_project(self, project_name: str) -> bool:
-        """Open an existing ChatGPT Project from the dedicated sidebar.
 
-        This is deliberately conservative: it does not create projects or
-        upload files. It tries visible project rows first, then expands the
-        sidebar's More/Projects affordances when the project list is long.
+
+    def _js_click_exact_text(self, text: str) -> bool:
+        try:
+            return bool(self.page.evaluate(
+                """
+                (target) => {
+                  const nodes = Array.from(document.querySelectorAll('button,a,[role="button"],[role="menuitem"]'));
+                  const el = nodes.find(n => ((n.innerText || n.textContent || '').replace(/\\s+/g, ' ').trim()) === target);
+                  if (!el) return false;
+                  el.scrollIntoView({block: 'center', inline: 'center'});
+                  el.click();
+                  return true;
+                }
+                """,
+                text,
+            ))
+        except Exception:
+            return False
+
+    def _visible_clickable_texts(self) -> list[str]:
+        try:
+            return self.page.evaluate(
+                """
+                () => Array.from(document.querySelectorAll('button,a,[role="menuitem"],[role="option"],[role="treeitem"]'))
+                  .filter(el => {
+                    const r = el.getBoundingClientRect();
+                    const style = window.getComputedStyle(el);
+                    return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+                  })
+                  .map(el => (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim())
+                  .filter(Boolean)
+                """
+            )
+        except Exception:
+            return []
+
+    def _open_projects_menu(self) -> bool:
+        if not self._open_composer_plus_menu():
+            return False
+        for label in ["Projects", "Project"]:
+            for action in ("hover", "click"):
+                try:
+                    loc = self.page.get_by_text(label, exact=True).last
+                    if action == "hover":
+                        loc.hover(timeout=1500)
+                    else:
+                        loc.click(timeout=1500)
+                    self.page.wait_for_timeout(500)
+                    return True
+                except Exception:
+                    continue
+                try:
+                    loc = self.page.get_by_role("menuitem", name=label, exact=False).last
+                    if action == "hover":
+                        loc.hover(timeout=1500)
+                    else:
+                        loc.click(timeout=1500)
+                    self.page.wait_for_timeout(500)
+                    return True
+                except Exception:
+                    continue
+        return False
+
+    def open_project(self, project_name: str) -> bool:
+        """Open an existing ChatGPT Project from the dedicated profile UI.
+
+        ChatGPT currently exposes projects both in the side rail and, on some
+        layouts, from the composer `+ -> Projects` submenu. Try both and fail
+        closed when the exact visible project cannot be selected.
         """
         name = (project_name or "").strip()
         if not name:
@@ -335,6 +411,170 @@ class ChatGPTPage:
         self._expand_projects_sidebar()
         if self._click_project_text(name):
             return True
+        if self._open_projects_menu() and self._click_project_text(name):
+            return True
+        return False
+
+
+    def list_projects(self, limit: int = 50) -> list[str]:
+        """Best-effort visible project listing.
+
+        Prefer the composer `+ -> Projects` submenu because it exposes a compact
+        project list even when the left sidebar is collapsed. Fall back to the
+        side rail text list if the submenu is unavailable.
+        """
+        self._ensure_sidebar_visible()
+        self._expand_projects_sidebar()
+        self._click_sidebar_more()
+        self._expand_projects_sidebar()
+        menu_opened = self._open_projects_menu()
+        if menu_opened:
+            texts = self._visible_clickable_texts()
+            project_indexes = [i for i, t in enumerate(texts) if " ".join((t or "").split()).lower() == "projects"]
+            if project_indexes:
+                texts = texts[project_indexes[-1] + 1:]
+        else:
+            try:
+                texts = self.page.locator("a, button").all_inner_texts()
+            except Exception:
+                texts = []
+        normalized = [" ".join((t or "").split()) for t in texts]
+        # If we are looking at the full sidebar DOM, project rows are between
+        # the `New project` affordance and the `Recents` section. This avoids
+        # returning normal chat history as projects.
+        lows = [t.lower() for t in normalized]
+        if "new project" in lows and "recents" in lows:
+            start = lows.index("new project") + 1
+            end = lows.index("recents", start) if "recents" in lows[start:] else len(normalized)
+            texts = normalized[start:end]
+        else:
+            texts = normalized
+        skip = {
+            "", "new chat", "search", "search chats", "library", "sora", "gpts",
+            "projects", "project", "more", "show more", "new project", "chatgpt pro",
+            "add photos & files", "recent files", "create image", "deep research",
+            "web search", "recents", "skip to content",
+        }
+        names: list[str] = []
+        seen: set[str] = set()
+        for raw in texts:
+            name = " ".join((raw or "").split())
+            low = name.lower()
+            if not name or len(name) > 120 or low in skip or name in seen:
+                continue
+            if low.startswith("chatgpt") or low.startswith("upgrade"):
+                continue
+            seen.add(name); names.append(name)
+            if len(names) >= limit:
+                break
+        return names
+
+    def create_project(self, project_name: str) -> bool:
+        name = (project_name or "").strip()
+        if not name:
+            return False
+        self._ensure_sidebar_visible()
+        self._expand_projects_sidebar()
+        opened = False
+        for label in ["New project", "Create project", "Add project"]:
+            try:
+                self.page.get_by_role("button", name=label, exact=False).last.click(timeout=2000, force=True)
+                self.page.wait_for_timeout(500)
+                opened = True
+                break
+            except Exception:
+                try:
+                    self.page.get_by_text(label, exact=False).last.click(timeout=2000, force=True)
+                    self.page.wait_for_timeout(500)
+                    opened = True
+                    break
+                except Exception:
+                    if self._js_click_exact_text(label):
+                        self.page.wait_for_timeout(800)
+                        opened = True
+                        break
+                    continue
+        if not opened:
+            return False
+        try:
+            try:
+                box = self.page.locator('input[placeholder="Copenhagen Trip"]').last
+                box.fill(name, timeout=3000)
+            except Exception:
+                box = self.page.locator("input:visible").last
+                box.fill(name, timeout=3000)
+        except Exception:
+            return False
+        for label in ["Create project", "Create", "Done", "Continue"]:
+            try:
+                self.page.get_by_role("button", name=label, exact=True).last.click(timeout=3000, force=True)
+                self.page.wait_for_timeout(1500)
+                return self.open_project(name)
+            except Exception:
+                continue
+        return self.open_project(name)
+
+    def ensure_conversation_focus(self, conversation_url: str | None = None, project_name: str | None = None) -> bool:
+        if conversation_url and conversation_url.startswith("https://chatgpt.com/c/"):
+            try:
+                if str(self.page.url).startswith(conversation_url):
+                    return True
+                self.page.goto(conversation_url, wait_until="domcontentloaded", timeout=20000)
+                self.page.wait_for_timeout(800)
+                return str(self.page.url).startswith(conversation_url) and self.is_prompt_box_available()
+            except Exception:
+                return False
+        if project_name:
+            return self.open_project(project_name) and self.is_prompt_box_available()
+        return self.is_prompt_box_available()
+
+    def delete_project(self, project_name: str) -> bool:
+        name = (project_name or "").strip()
+        if not name or not self.open_project(name):
+            return False
+        opened_menu = False
+        for label in [f"Open project options for {name}", "Show project details", "Open project options", "More options", "More"]:
+            try:
+                self.page.get_by_label(label, exact=True).click(timeout=2500, force=True)
+                self.page.wait_for_timeout(500)
+                opened_menu = True
+                break
+            except Exception:
+                try:
+                    self.page.get_by_role("button", name=label, exact=False).last.click(timeout=2500, force=True)
+                    self.page.wait_for_timeout(500)
+                    opened_menu = True
+                    break
+                except Exception:
+                    continue
+        if not opened_menu:
+            return False
+        clicked_delete = False
+        for label in ["Delete project", "Delete Project"]:
+            try:
+                self.page.get_by_text(label, exact=True).last.click(timeout=2500, force=True)
+                self.page.wait_for_timeout(700)
+                clicked_delete = True
+                break
+            except Exception:
+                continue
+        if not clicked_delete:
+            return False
+        try:
+            boxes = self.page.get_by_role("textbox")
+            if boxes.count() > 0:
+                box = boxes.last
+                if box.is_visible(timeout=500):
+                    box.fill(name, timeout=1500)
+        except Exception:
+            pass
+        for label in ["Delete", "Delete project", "Confirm"]:
+            try:
+                self.page.get_by_role("button", name=label, exact=True).last.click(timeout=3000, force=True)
+                self.page.wait_for_timeout(2500)
+                return True
+            except Exception:
+                continue
         return False
 
     def start_new_chat(self, project_name: str | None = None) -> bool:
@@ -407,26 +647,44 @@ class ChatGPTPage:
             try:
                 btn = self.page.get_by_role("button", name=label).last
                 if btn.count() > 0 and btn.is_visible(timeout=500):
-                    btn.click(timeout=1000)
-                    self.page.wait_for_timeout(300)
+                    try:
+                        btn.click(timeout=1000)
+                    except Exception:
+                        btn.click(timeout=1000, force=True)
+                    self.page.wait_for_timeout(800)
                     return
             except Exception:
+                if self._js_click_exact_text(label):
+                    self.page.wait_for_timeout(800)
+                    return
                 continue
+            try:
+                clicked = bool(self.page.evaluate(
+                    """() => { const el = Array.from(document.querySelectorAll('button')).find(b => b.getAttribute('aria-label') === 'Open sidebar'); if (!el) return false; el.click(); return true; }"""
+                ))
+                if clicked:
+                    self.page.wait_for_timeout(800)
+                    return
+            except Exception:
+                pass
 
     def _expand_projects_sidebar(self) -> None:
         for label in ["Projects", "Show projects", "More projects"]:
-            try:
-                self.page.get_by_text(label, exact=False).last.click(timeout=1000)
+            for make in (
+                lambda label=label: self.page.get_by_text(label, exact=True).first,
+                lambda label=label: self.page.get_by_role("button", name=label, exact=False).first,
+                lambda label=label: self.page.get_by_text(label, exact=False).first,
+            ):
+                try:
+                    loc = make()
+                    loc.click(timeout=1000, force=True)
+                    self.page.wait_for_timeout(500)
+                    return
+                except Exception:
+                    continue
+            if self._js_click_exact_text(label):
                 self.page.wait_for_timeout(500)
                 return
-            except Exception:
-                pass
-            try:
-                self.page.get_by_role("button", name=label).last.click(timeout=1000)
-                self.page.wait_for_timeout(300)
-                return
-            except Exception:
-                continue
 
     def _click_sidebar_more(self) -> None:
         for label in ["More", "Show more"]:
@@ -458,7 +716,14 @@ class ChatGPTPage:
                     loc.scroll_into_view_if_needed(timeout=1000)
                 except Exception:
                     pass
-                loc.click(timeout=2000)
+                try:
+                    loc.click(timeout=2000)
+                except Exception:
+                    try:
+                        loc.click(timeout=2000, force=True)
+                    except Exception:
+                        if not self._js_click_exact_text(name):
+                            raise
                 try:
                     self.page.wait_for_load_state("domcontentloaded", timeout=3000)
                 except Exception:
@@ -559,18 +824,43 @@ class ChatGPTPage:
         return fallback
 
     def _find_prompt_box(self):
+        candidates = [
+            'textarea[aria-label*="Chat"]:visible',
+            'div[contenteditable="true"][aria-label*="Chat"]:visible',
+            '#prompt-textarea:visible',
+            'textarea:visible',
+            'div[contenteditable="true"]:visible',
+        ]
+        for css in candidates:
+            try:
+                locs = self.page.locator(css)
+                if locs.count() == 0:
+                    continue
+                loc = locs.last
+                loc.wait_for(state="visible", timeout=1200)
+                loc.scroll_into_view_if_needed(timeout=1000)
+                return loc
+            except Exception:
+                continue
         for sel in self.selectors.get("prompt_box", []):
             try:
                 if sel == "role:textbox":
-                    loc = self.page.get_by_role("textbox").last
+                    locs = self.page.get_by_role("textbox")
                 else:
-                    loc = self.page.locator(sel).last
-                loc.wait_for(state="visible", timeout=3000)
-                try:
-                    loc.scroll_into_view_if_needed(timeout=1000)
-                except Exception:
-                    pass
-                return loc
+                    locs = self.page.locator(sel)
+                count = locs.count()
+                for i in range(count - 1, -1, -1):
+                    loc = locs.nth(i)
+                    try:
+                        if loc.is_visible(timeout=500):
+                            loc.scroll_into_view_if_needed(timeout=1000)
+                            return loc
+                    except AttributeError:
+                        loc.wait_for(state="visible", timeout=1200)
+                        loc.scroll_into_view_if_needed(timeout=1000)
+                        return loc
+                    except Exception:
+                        continue
             except Exception:
                 continue
         return None

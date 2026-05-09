@@ -95,6 +95,24 @@ gpt-brain-web mcp install-codex
 
 If a request includes `project="..."` and the ChatGPT Project cannot be opened from the dedicated sidebar, the tool refuses to send into the current chat by default. Create/open the project in ChatGPT, update the project name, or explicitly pass `allow_project_fallback=true` when current-chat fallback is acceptable.
 
+## Project list/open/create/delete problems
+
+Project UI labels can change. Start with non-destructive checks:
+
+```bash
+gpt-brain-web records list-projects --limit 20
+gpt-brain-web records open-project "Exact Project Name"
+```
+
+For disposable validation only, creation/deletion require explicit confirmation:
+
+```bash
+gpt-brain-web records create-project "GPT Brain Test" --confirm
+gpt-brain-web records delete-project "GPT Brain Test" --confirm --confirm-name "GPT Brain Test" --purge-local
+```
+
+If the gateway opened one conversation but you manually clicked another chat, the next send re-validates focus and either navigates back to the recorded conversation/project or returns `needs_user_action`. It should not silently submit into the manually selected chat.
+
 ## Job stays `waiting_for_model`
 
 Long jobs emit heartbeat events while ChatGPT is thinking. If no progress is observed, the adapter refreshes once after `GPT_BRAIN_STALE_REFRESH_SECONDS` (default 240s). If the status does not change after the configured timeout, run `gpt-brain-web doctor --verbose` and inspect local records with `gpt-brain-web records list`.
@@ -109,7 +127,7 @@ gpt-brain-web records cleanup-remote --dry-run
 gpt-brain-web records cleanup-remote --confirm
 ```
 
-To delete one ChatGPT web conversation directly, pass the exact `/c/...` URL and `--confirm`:
+To delete one ChatGPT web conversation directly, pass the exact `/c/...` URL (including project-scoped `/g/.../c/...` URLs) and `--confirm`:
 
 ```bash
 gpt-brain-web records delete-remote https://chatgpt.com/c/... --confirm

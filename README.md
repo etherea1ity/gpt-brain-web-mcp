@@ -144,6 +144,7 @@ Restart Codex after changing MCP config.
 - `list_web_sessions`
 - `delete_local_record`
 - `purge_project_records`
+- `list_projects`, `open_project`, `create_project`, `start_project_conversation`, `delete_remote_project`
 - `delete_remote_conversation`
 - `list_remote_cleanup`
 - `cleanup_remote_conversations`
@@ -168,7 +169,21 @@ The gateway treats `project` as the routing key **only when the MCP caller expli
 - `cleanup_remote=true` immediately deletes the created ChatGPT `/c/...` conversation after extracting the answer. Without it, ephemeral/job conversations are queued for later cleanup.
 - `start_research` always uses an isolated job conversation so Deep Research / web research does not pollute normal project threads. For `retention=job`/`ephemeral`, the result is saved locally and the remote ChatGPT conversation is deleted after completion by default; set `cleanup_remote=false` or `retention=persistent` to keep it in ChatGPT.
 
-For real ChatGPT Projects, the browser adapter opens the dedicated sidebar, expands `More -> Projects` when necessary, and clicks an existing project row. It does not auto-create projects or upload project files.
+For real ChatGPT Projects, the browser adapter opens the dedicated sidebar, expands `More -> Projects` when necessary, and clicks an existing project row. It can also create/delete **explicitly confirmed** projects for disposable workflow spaces, but it never uploads project files automatically.
+
+Project operations exposed to MCP/CLI:
+
+```bash
+gpt-brain-web records list-projects --limit 20
+gpt-brain-web records open-project "My Project"
+gpt-brain-web records create-project "Disposable Test Project" --confirm
+gpt-brain-web records start-project-conversation "My Project" --question "Reply with exactly: project-ok" --tier thinking_normal
+gpt-brain-web records delete-remote https://chatgpt.com/c/... --confirm
+gpt-brain-web records delete-project "Disposable Test Project" --confirm --confirm-name "Disposable Test Project" --purge-local
+```
+
+Before every prompt submission the gateway re-checks conversation focus. If the user manually clicked another ChatGPT chat after the gateway selected a target conversation/project, it navigates back to the recorded `conversation_url` or reopens the requested project composer. If focus cannot be confirmed, it fails closed with `needs_user_action` rather than sending the prompt into the wrong chat.
+
 
 ## ask_brain default strategy
 
@@ -263,7 +278,7 @@ gpt-brain-web records cleanup-remote --dry-run
 gpt-brain-web records cleanup-remote --confirm
 ```
 
-The remote delete path only accepts explicit `https://chatgpt.com/c/...` URLs, skips `persistent` records, and requires confirmation for actual deletion.
+The remote delete path only accepts explicit ChatGPT conversation URLs containing `/c/...`, skips `persistent` records, and requires confirmation for actual deletion. Project deletion is even stricter: `delete_remote_project` requires both `confirm=true` and `confirm_name` exactly matching the project name. Use it only for disposable/test projects unless you intentionally want to delete a real ChatGPT Project.
 
 ## Running tests
 

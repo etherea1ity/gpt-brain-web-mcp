@@ -215,6 +215,7 @@ class BrowserSessionManager:
             f"--user-data-dir={win_profile}",
             "--no-first-run",
             "--new-window",
+            "--window-size=1400,1000",
             self.settings.chatgpt_url,
         ]
 

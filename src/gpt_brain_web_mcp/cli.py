@@ -196,6 +196,16 @@ def cmd_records(args: argparse.Namespace) -> int:
         _print_json(svc.purge_project_records(args.project, args.include_thread)); return 0
     if args.records_cmd == "delete-remote":
         _print_json(svc.delete_remote_conversation(args.conversation_url, args.confirm)); return 0
+    if args.records_cmd == "list-projects":
+        _print_json(svc.list_projects(args.limit)); return 0
+    if args.records_cmd == "open-project":
+        _print_json(svc.open_project(args.project)); return 0
+    if args.records_cmd == "create-project":
+        _print_json(svc.create_project(args.project, args.confirm)); return 0
+    if args.records_cmd == "start-project-conversation":
+        _print_json(svc.start_project_conversation(args.project, args.question, args.tier, args.cleanup_remote)); return 0
+    if args.records_cmd == "delete-project":
+        _print_json(svc.delete_remote_project(args.project, args.confirm, args.confirm_name, args.purge_local)); return 0
     if args.records_cmd == "cleanup-list":
         _print_json(svc.list_remote_cleanup(args.status, args.project, args.limit)); return 0
     if args.records_cmd == "cleanup-remote":
@@ -268,6 +278,28 @@ def build_parser() -> argparse.ArgumentParser:
     rremote.add_argument("conversation_url")
     rremote.add_argument("--confirm", action="store_true", help="Required; confirms remote deletion in ChatGPT Web UI")
     rremote.set_defaults(func=cmd_records)
+    rplist = records_sub.add_parser("list-projects", help="List visible ChatGPT Projects from the dedicated profile")
+    rplist.add_argument("--limit", type=int, default=50)
+    rplist.set_defaults(func=cmd_records)
+    ropenp = records_sub.add_parser("open-project", help="Open a ChatGPT Project by exact visible name")
+    ropenp.add_argument("project")
+    ropenp.set_defaults(func=cmd_records)
+    rcreatep = records_sub.add_parser("create-project", help="Create a disposable/explicit ChatGPT Project")
+    rcreatep.add_argument("project")
+    rcreatep.add_argument("--confirm", action="store_true")
+    rcreatep.set_defaults(func=cmd_records)
+    rstartp = records_sub.add_parser("start-project-conversation", help="Start a new conversation inside a ChatGPT Project")
+    rstartp.add_argument("project")
+    rstartp.add_argument("--question")
+    rstartp.add_argument("--tier")
+    rstartp.add_argument("--cleanup-remote", action="store_true")
+    rstartp.set_defaults(func=cmd_records)
+    rdelp = records_sub.add_parser("delete-project", help="Delete a ChatGPT Project; requires confirm and matching confirm-name")
+    rdelp.add_argument("project")
+    rdelp.add_argument("--confirm", action="store_true")
+    rdelp.add_argument("--confirm-name")
+    rdelp.add_argument("--purge-local", action="store_true")
+    rdelp.set_defaults(func=cmd_records)
     rclist = records_sub.add_parser("cleanup-list", help="List queued remote ChatGPT conversation cleanup items")
     rclist.add_argument("--status", default=None)
     rclist.add_argument("--project")
