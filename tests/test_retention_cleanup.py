@@ -72,3 +72,17 @@ def test_cleanup_id_terminal_status_is_not_reprocessed(tmp_path):
     assert report["deleted"] == 0
     assert report["skipped"] == 1
     assert report["items"][0]["action"] == "skipped_terminal_deleted"
+
+
+def test_deep_research_fallback_flags_default_off(tmp_path, monkeypatch):
+    from gpt_brain_web_mcp.jobs import JobManager
+    svc = WebBrainService(Settings(home=tmp_path, mock_browser=True))
+    jm = JobManager(svc, svc.store, tmp_path / "artifacts")
+    monkeypatch.delenv("GPT_BRAIN_DEEP_RESEARCH_FALLBACK_ON_TIMEOUT", raising=False)
+    monkeypatch.delenv("GPT_BRAIN_DEEP_RESEARCH_FALLBACK_ON_FAILURE", raising=False)
+    assert jm._deep_research_timeout_fallback_enabled() is False
+    assert jm._deep_research_failure_fallback_enabled() is False
+    monkeypatch.setenv("GPT_BRAIN_DEEP_RESEARCH_FALLBACK_ON_TIMEOUT", "1")
+    monkeypatch.setenv("GPT_BRAIN_DEEP_RESEARCH_FALLBACK_ON_FAILURE", "true")
+    assert jm._deep_research_timeout_fallback_enabled() is True
+    assert jm._deep_research_failure_fallback_enabled() is True

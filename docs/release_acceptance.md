@@ -50,12 +50,12 @@ Live validation evidence from the final run:
 - `ask_brain`: returned `GPT_BRAIN_WEB_LIVE_OK`, resolved tier `thinking_heavy`, conversation `https://chatgpt.com/c/69ff3458-592c-8328-9d86-3968b9fcf936`, `retention=ephemeral`, `cleanup_remote_status=deleted`.
 - `ask_web`: returned today's date with sources `https://nationaldaycalendar.com/what-day-is-it` and `https://www.calendar-365.com/calendar/2026/May.html`, conversation `https://chatgpt.com/c/69ff3475-a3e0-832a-b804-b649b8fbfa5a`, `cleanup_remote_status=deleted`.
 - `start_research`: job `job_02ce8fb2f8b64e03a2d6d3444b08be9f` progressed `queued -> running -> waiting_for_model -> completed`; result included MCP official/source URLs; conversation `https://chatgpt.com/c/69ff3682-138c-8328-85de-5476a88361cf` was remotely deleted by async job cleanup (`Remote cleanup status: deleted`).
-- Deep Research was requested and the UI was detectable, but the job honestly resolved to `web_research_prompt` after the Deep Research path did not complete before timeout. The fallback returned sources and passed acceptance.
+- Deep Research UI was detectable. After product feedback, the current policy is stricter than this earlier run: Deep Research no longer silently falls back on timeout by default; it waits up to the research runtime budget and reports success/failure/user-action honestly. Web-research fallback is now opt-in via `GPT_BRAIN_DEEP_RESEARCH_FALLBACK_ON_TIMEOUT=1` or `GPT_BRAIN_DEEP_RESEARCH_FALLBACK_ON_FAILURE=1`.
 - `gpt-brain-web records cleanup-list --status pending` returned no pending items; cleanup stats showed deleted items.
 
 ## Known limits
 
-- Deep Research is best-effort UI automation: if ChatGPT exposes the control it is selected; if it does not complete before timeout, the workflow honestly falls back to a web-research prompt and records `resolved_research_mode=web_research_prompt`.
+- Deep Research is best-effort UI automation: if ChatGPT exposes the control it is selected and treated as a slow job. It does not default-fallback on timeout; fallback requires explicit environment opt-in.
 - Pro/Pro Extended are not default and require `allow_pro=true`; live Pro mode selection was explored earlier but not consumed as part of final automated acceptance.
 - The current daemon is an in-process/session-manager facade plus optional background process, not a network IPC daemon. The module boundary is prepared for future IPC hardening.
 - ChatGPT UI can change. Update `config/selectors.yaml` and `config/model_modes.yaml`, then run `doctor --verbose` and `ui-check`.

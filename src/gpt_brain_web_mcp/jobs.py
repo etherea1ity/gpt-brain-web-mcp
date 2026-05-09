@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
@@ -170,16 +171,41 @@ class JobManager:
                     "Include executive summary, evidence table when useful, recommendation, risks/unknowns, sources, and next steps."
                 )
                 req = BrainRequest(question=prompt, project=project, context=context, tier=tier, allow_pro=allow_pro, web_search=True, save_session=False, conversation_kind="job", conversation_key=jid, conversation_strategy="new", project_explicit=project_explicit, allow_project_fallback=allow_project_fallback, requested_research_mode=requested_mode, retention=retention, cleanup_remote=cleanup_remote)
+                old_response_timeout = os.environ.get("GPT_BRAIN_RESPONSE_TIMEOUT_SECONDS")
+                if requested_mode == "deep_research":
+                    # Deep Research is intentionally slow. Use the research job
+                    # runtime hint as the browser wait budget instead of the
+                    # shorter ask timeout, so the job waits for a real success
+                    # or visible failure rather than silently downgrading.
+                    hinted = max(60, int(max_runtime_hint_minutes) * 60)
+                    current = int(old_response_timeout or "0") if (old_response_timeout or "").isdigit() else 0
+                    os.environ["GPT_BRAIN_RESPONSE_TIMEOUT_SECONDS"] = str(max(current, hinted))
                 try:
-                    res = WebChatGPTBackend(self.service.settings, self.store, browser).ask_web(req, None)
-                except TimeoutError:
-                    if requested_mode != "deep_research":
-                        raise
-                    warnings.append("Deep Research did not complete before timeout; used web research fallback.")
-                    res, browser = self._run_web_research_fallback(browser, jid, prompt, project, context, tier, allow_pro, project_explicit, allow_project_fallback, retention, cleanup_remote, BrowserSessionManager, WebChatGPTBackend)
-                if requested_mode == "deep_research" and self._bad_research_answer(getattr(res, "answer", "")):
-                    warnings.append("Deep Research returned no usable final answer; used web research fallback.")
-                    res, browser = self._run_web_research_fallback(browser, jid, prompt, project, context, tier, allow_pro, project_explicit, allow_project_fallback, retention, cleanup_remote, BrowserSessionManager, WebChatGPTBackend)
+                    try:
+                        res = WebChatGPTBackend(self.service.settings, self.store, browser).ask_web(req, None)
+                    except TimeoutError as exc:
+                        if requested_mode != "deep_research" or self._deep_research_timeout_fallback_enabled():
+                            if requested_mode == "deep_research":
+                                warnings.append("Deep Research timed out; fallback was explicitly enabled, so used web research prompt.")
+                                res, browser = self._run_web_research_fallback(browser, jid, prompt, project, context, tier, allow_pro, project_explicit, allow_project_fallback, retention, cleanup_remote, BrowserSessionManager, WebChatGPTBackend)
+                            else:
+                                raise
+                        else:
+                            self.store.update_job(jid, status="failed", resolved_research_mode="deep_research", conversation_url=getattr(browser.pages.get(jid), "conversation_url", None), error_redacted=f"Deep Research did not finish within max_runtime_hint_minutes={max_runtime_hint_minutes}. Increase max_runtime_hint_minutes or poll longer; no fallback was used.", warnings_json=warnings + [str(exc)])
+                            return
+                    if requested_mode == "deep_research" and self._bad_research_answer(getattr(res, "answer", "")):
+                        if self._deep_research_failure_fallback_enabled():
+                            warnings.append("Deep Research returned a visible failure; fallback was explicitly enabled, so used web research prompt.")
+                            res, browser = self._run_web_research_fallback(browser, jid, prompt, project, context, tier, allow_pro, project_explicit, allow_project_fallback, retention, cleanup_remote, BrowserSessionManager, WebChatGPTBackend)
+                        else:
+                            self.store.update_job(jid, status="failed", resolved_tier=res.resolved_tier, resolved_research_mode="deep_research", conversation_url=res.conversation_url, result_redacted=res.answer, error_redacted="Deep Research returned a visible failure; no fallback was used.", warnings_json=res.warnings + warnings, sources_json=res.sources)
+                            return
+                finally:
+                    if requested_mode == "deep_research":
+                        if old_response_timeout is None:
+                            os.environ.pop("GPT_BRAIN_RESPONSE_TIMEOUT_SECONDS", None)
+                        else:
+                            os.environ["GPT_BRAIN_RESPONSE_TIMEOUT_SECONDS"] = old_response_timeout
                 if self._is_cancelled(jid):
                     self.store.update_job(jid, status="cancelled", resolved_tier=res.resolved_tier, resolved_research_mode=res.resolved_research_mode or requested_mode, conversation_url=res.conversation_url, warnings_json=res.warnings + warnings, sources_json=res.sources)
                     return
@@ -208,6 +234,12 @@ class JobManager:
         finally:
             with self.lock:
                 self.futures.pop(jid, None)
+
+    def _deep_research_timeout_fallback_enabled(self) -> bool:
+        return os.getenv("GPT_BRAIN_DEEP_RESEARCH_FALLBACK_ON_TIMEOUT", "0").lower() in {"1", "true", "yes", "on"}
+
+    def _deep_research_failure_fallback_enabled(self) -> bool:
+        return os.getenv("GPT_BRAIN_DEEP_RESEARCH_FALLBACK_ON_FAILURE", "0").lower() in {"1", "true", "yes", "on"}
 
     def _bad_research_answer(self, text: str) -> bool:
         low = (text or "").strip().lower()

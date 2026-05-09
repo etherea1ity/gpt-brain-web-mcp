@@ -231,7 +231,7 @@ GPT_BRAIN_HEARTBEAT_SECONDS=20
 GPT_BRAIN_STALE_REFRESH_SECONDS=240
 ```
 
-`get_research_result` returns `requested_research_mode` and `resolved_research_mode` so callers can tell whether real Deep Research was used or a web-research prompt fallback was used. If Deep Research UI is not detectable/selectable for the logged-in account, the job falls back with an explicit warning instead of pretending.
+`get_research_result` returns `requested_research_mode` and `resolved_research_mode` so callers can tell whether real Deep Research was used. Deep Research is treated as a slow workflow: by default the worker waits up to `max_runtime_hint_minutes` / `GPT_BRAIN_RESPONSE_TIMEOUT_SECONDS` for success or a visible failure and does **not** silently downgrade to normal web research. If you explicitly want old fallback behavior, set `GPT_BRAIN_DEEP_RESEARCH_FALLBACK_ON_TIMEOUT=1` or `GPT_BRAIN_DEEP_RESEARCH_FALLBACK_ON_FAILURE=1`.
 
 ## Cleanup and deletion
 

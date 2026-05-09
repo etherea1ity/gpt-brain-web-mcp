@@ -32,7 +32,7 @@ Update mode labels in `config/model_modes.yaml` or selectors in `config/selector
 
 ## Deep Research not found
 
-Run `gpt-brain-web ui-check` to inspect the composer `+` menu without sending a prompt. If Deep Research is unavailable for the account/UI state, `start_research` falls back to a Web Research prompt and records a warning. The adapter also tries to remove the Deep Research pill after use so later normal asks do not inherit the mode.
+Run `gpt-brain-web ui-check` to inspect the composer `+` menu without sending a prompt. Deep Research can be very slow; by default `start_research` waits for real completion/failure up to `max_runtime_hint_minutes` instead of falling back. If the UI is unavailable or the job times out, the status becomes `failed` / `needs_user_action` with an explicit message. Set `GPT_BRAIN_DEEP_RESEARCH_FALLBACK_ON_TIMEOUT=1` or `GPT_BRAIN_DEEP_RESEARCH_FALLBACK_ON_FAILURE=1` only if you intentionally want web-research prompt fallback. The adapter also tries to remove the Deep Research pill after use so later normal asks do not inherit the mode.
 
 ## Headless unstable
 
