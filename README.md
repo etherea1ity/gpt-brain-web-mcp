@@ -135,6 +135,7 @@ Restart Codex after changing MCP config.
 
 ## MCP tools
 
+- `product_policy`, `resolve_policy`
 - `ask_brain`
 - `ask_web`
 - `start_research`
@@ -153,6 +154,19 @@ Restart Codex after changing MCP config.
 - `doctor`
 - `cleanup_browser`
 - `daemon_status`
+
+
+## Product workflow policy
+
+The project now has a stable product policy surface. Inspect it with:
+
+```bash
+gpt-brain-web policy
+gpt-brain-web policy --resolve --project "My Repo"
+gpt-brain-web policy --resolve --kind research --project "My Repo"
+```
+
+MCP clients can call `product_policy` and `resolve_policy` to understand defaults before sending work. The short version: omitted project = fresh ephemeral global chat; explicit project = exact ChatGPT Project routing and persistent continuity; research = async isolated job conversation with artifact-first cleanup. See `docs/product_policy.md`.
 
 ## Project and conversation management
 

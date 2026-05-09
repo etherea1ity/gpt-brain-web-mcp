@@ -6,6 +6,11 @@ The main backend is `web-chatgpt`: a controlled Playwright Chromium persistent p
 
 ## Components
 
+### Product policy surface
+
+`product_policy.py` is the single source of truth for workflow defaults: omitted project uses a fresh ephemeral global conversation; explicit project uses exact Project routing and persistent reuse; research uses isolated async job conversations. MCP exposes `product_policy` and `resolve_policy` so clients can reason about defaults without duplicating them.
+
+
 ```text
 MCP Server
   -> WebBrainService

@@ -37,6 +37,12 @@ def create_mcp(service=None):
     mcp = FastMCP("gpt-brain-web-mcp")
 
     @mcp.tool()
+    async def product_policy() -> dict[str, Any]: return await runner.run("product_policy")
+    @mcp.tool()
+    async def resolve_policy(kind: str = "ask", project: str | None = None, conversation_strategy: str | None = None, retention: str | None = None, cleanup_remote: bool | None = None, save_session: bool | None = None, allow_project_fallback: bool | None = None) -> dict[str, Any]:
+        return await runner.run("resolve_policy", kind=kind, project=project, conversation_strategy=conversation_strategy, retention=retention, cleanup_remote=cleanup_remote, save_session=save_session, allow_project_fallback=allow_project_fallback)
+
+    @mcp.tool()
     async def ask_brain(question: str, project: str | None = None, context: str | None = None, tier: str | None = None, allow_pro: bool = False, web_search: bool = False, async_request: bool = False, save_session: bool = False, conversation_strategy: str | None = None, session_id: str | None = None, conversation_url: str | None = None, allow_project_fallback: bool = False, retention: str | None = None, cleanup_remote: bool = False) -> dict[str, Any]:
         return await runner.run("tool_ask_brain", question=question, project=project, context=context, tier=tier, allow_pro=allow_pro, web_search=web_search, async_request=async_request, save_session=save_session, conversation_strategy=conversation_strategy, session_id=session_id, conversation_url=conversation_url, allow_project_fallback=allow_project_fallback, retention=retention, cleanup_remote=cleanup_remote)
 

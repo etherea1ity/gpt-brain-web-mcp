@@ -159,6 +159,15 @@ def cmd_mcp(args: argparse.Namespace) -> int:
     raise SystemExit(f"unknown mcp command {args.mcp_cmd}")
 
 
+def cmd_policy(args: argparse.Namespace) -> int:
+    svc = WebBrainService(Settings.from_env())
+    if getattr(args, "resolve", False):
+        _print_json(svc.resolve_policy(kind=args.kind, project=args.project, conversation_strategy=args.conversation_strategy, retention=args.retention, cleanup_remote=args.cleanup_remote, save_session=args.save_session, allow_project_fallback=args.allow_project_fallback))
+    else:
+        _print_json(svc.product_policy())
+    return 0
+
+
 def cmd_smoke(args: argparse.Namespace) -> int:
     # Default smoke is mock-only for CI; live smoke must be explicit and disables mock.
     if os.getenv("RUN_LIVE_CHATGPT_WEB"):
@@ -253,6 +262,17 @@ def build_parser() -> argparse.ArgumentParser:
     mu.add_argument("--dry-run", action="store_true")
     mu.set_defaults(func=cmd_mcp)
     mcp_sub.add_parser("tools").set_defaults(func=cmd_mcp)
+
+    policy = sub.add_parser("policy", help="Print the product workflow policy or resolve one request")
+    policy.add_argument("--resolve", action="store_true", help="Resolve effective policy for a request")
+    policy.add_argument("--kind", choices=["ask", "research"], default="ask")
+    policy.add_argument("--project")
+    policy.add_argument("--conversation-strategy")
+    policy.add_argument("--retention")
+    policy.add_argument("--cleanup-remote", action="store_true", default=None)
+    policy.add_argument("--save-session", action="store_true", default=None)
+    policy.add_argument("--allow-project-fallback", action="store_true", default=None)
+    policy.set_defaults(func=cmd_policy)
 
     sub.add_parser("smoke", help="Run mock smoke unless RUN_LIVE_CHATGPT_WEB=1").set_defaults(func=cmd_smoke)
     sub.add_parser("cleanup", help="Close browser worker but preserve profile").set_defaults(func=cmd_cleanup)

@@ -12,6 +12,8 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED = {
+    "product_policy",
+    "resolve_policy",
     "ask_brain",
     "ask_web",
     "start_research",

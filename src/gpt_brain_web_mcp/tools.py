@@ -4,7 +4,8 @@ from typing import Any
 from .backends.web_chatgpt import WebChatGPTBackend
 from .config import Settings
 from .jobs import JobManager
-from .models import BrainRequest, normalize_retention, normalize_tier
+from .models import BrainRequest, normalize_tier
+from .product_policy import ProductPolicy
 from .redaction import redact_obj, redact_text
 from .store import Store
 from .web.daemon_client import DaemonClient
@@ -16,6 +17,7 @@ class WebBrainService:
         self.store = self.daemon.store
         self.browser = self.daemon.manager
         self.backend = WebChatGPTBackend(self.settings, self.store, self.browser)
+        self.policy = ProductPolicy.from_settings(self.settings)
         self.jobs = JobManager(self, self.store, self.settings.artifacts_dir)
 
     def _session(self, req: BrainRequest) -> str | None:
@@ -52,8 +54,14 @@ class WebBrainService:
                 res.cleanup_remote_status = "deleted" if report.get("deleted", 0) else "failed" if report.get("failed", 0) else "skipped"
         return res
 
-    def _request_retention(self, kwargs: dict[str, Any], *, project_explicit: bool, default: str | None = None) -> str:
-        return normalize_retention(kwargs.get("retention"), project_explicit=project_explicit, default=default)
+    def product_policy(self) -> dict[str, Any]:
+        return self.policy.to_dict()
+
+    def resolve_policy(self, **kwargs) -> dict[str, Any]:
+        kind = kwargs.get("kind", "ask")
+        if kind == "research":
+            return self.policy.resolve_research(project=kwargs.get("project"), retention=kwargs.get("retention"), cleanup_remote=kwargs.get("cleanup_remote"), allow_project_fallback=kwargs.get("allow_project_fallback")).to_dict()
+        return self.policy.resolve_ask(project=kwargs.get("project"), conversation_strategy=kwargs.get("conversation_strategy"), retention=kwargs.get("retention"), cleanup_remote=kwargs.get("cleanup_remote"), save_session=kwargs.get("save_session"), allow_project_fallback=kwargs.get("allow_project_fallback")).to_dict()
 
     def ask_brain(self, req: BrainRequest) -> Any:
         sid = self._session(req)
@@ -79,14 +87,15 @@ class WebBrainService:
         tier = normalize_tier(kwargs.get("tier") or self.settings.default_tier)
         allow_pro = bool(kwargs.get("allow_pro", self.settings.allow_pro_default))
         raw_project = kwargs.get("project")
-        project_explicit = raw_project is not None and str(raw_project).strip() != ""
-        project = self._effective_project(raw_project)
-        conversation_strategy = str(kwargs.get("conversation_strategy") or ("new" if not project_explicit else self.settings.default_conversation_policy) or "reuse_project")
+        policy = self.policy.resolve_ask(project=raw_project, conversation_strategy=kwargs.get("conversation_strategy"), retention=kwargs.get("retention"), cleanup_remote=kwargs.get("cleanup_remote"), save_session=kwargs.get("save_session"), allow_project_fallback=kwargs.get("allow_project_fallback"))
+        project_explicit = policy.project_explicit
+        project = policy.project
+        conversation_strategy = policy.conversation_strategy
         resume_session_id = kwargs.get("session_id") or kwargs.get("resume_session_id")
         resume_conversation_url = kwargs.get("conversation_url") or kwargs.get("resume_conversation_url")
-        allow_project_fallback = bool(kwargs.get("allow_project_fallback", False))
-        retention = self._request_retention(kwargs, project_explicit=project_explicit)
-        cleanup_remote = bool(kwargs.get("cleanup_remote", False))
+        allow_project_fallback = policy.allow_project_fallback
+        retention = policy.retention
+        cleanup_remote = policy.cleanup_remote
         if async_request:
             # Release any synchronous browser context before a background worker
             # takes ownership of the same dedicated profile/CDP port.
@@ -110,7 +119,7 @@ class WebBrainService:
                 cleanup_remote,
             )
             return {"answer": None, "backend": "web-chatgpt", "job_id": started.job_id, "status": started.status, "kind": "ask_web" if kwargs.get("web_search") else "ask", "message": started.message, "retention": retention, "cleanup_remote": cleanup_remote, "warnings": []}
-        req = BrainRequest(redact_text(kwargs["question"]), project, redact_text(kwargs.get("context")) if kwargs.get("context") else None, tier, allow_pro, bool(kwargs.get("web_search", False)), False, bool(kwargs.get("save_session", self.settings.save_session_default)), conversation_strategy=conversation_strategy, project_explicit=project_explicit, allow_project_fallback=allow_project_fallback, resume_session_id=resume_session_id, resume_conversation_url=resume_conversation_url, retention=retention, cleanup_remote=cleanup_remote)
+        req = BrainRequest(redact_text(kwargs["question"]), project, redact_text(kwargs.get("context")) if kwargs.get("context") else None, tier, allow_pro, bool(kwargs.get("web_search", False)), False, policy.save_session, conversation_strategy=conversation_strategy, project_explicit=project_explicit, allow_project_fallback=allow_project_fallback, resume_session_id=resume_session_id, resume_conversation_url=resume_conversation_url, retention=retention, cleanup_remote=cleanup_remote)
         res = self.ask_web(req) if req.web_search else self.ask_brain(req)
         return redact_obj(res.to_dict())
 
@@ -126,10 +135,8 @@ class WebBrainService:
         except Exception:
             pass
         raw_project = kwargs.get("project")
-        project_explicit = raw_project is not None and str(raw_project).strip() != ""
-        retention = self._request_retention(kwargs, project_explicit=project_explicit, default="job")
-        cleanup_remote = bool(kwargs.get("cleanup_remote", retention in {"ephemeral", "job"}))
-        started = self.jobs.start_research(redact_text(kwargs["topic"]), self._effective_project(raw_project), redact_text(kwargs.get("context")) if kwargs.get("context") else None, normalize_tier(kwargs.get("tier") or self.settings.default_tier), bool(kwargs.get("allow_pro", self.settings.allow_pro_default)), bool(kwargs.get("deep_research", True)), kwargs.get("output_format", "report"), int(kwargs.get("max_runtime_hint_minutes", 30)), project_explicit, bool(kwargs.get("allow_project_fallback", False)), retention, cleanup_remote)
+        policy = self.policy.resolve_research(project=raw_project, retention=kwargs.get("retention"), cleanup_remote=kwargs.get("cleanup_remote"), allow_project_fallback=kwargs.get("allow_project_fallback"))
+        started = self.jobs.start_research(redact_text(kwargs["topic"]), policy.project, redact_text(kwargs.get("context")) if kwargs.get("context") else None, normalize_tier(kwargs.get("tier") or self.settings.default_tier), bool(kwargs.get("allow_pro", self.settings.allow_pro_default)), bool(kwargs.get("deep_research", True)), kwargs.get("output_format", "report"), int(kwargs.get("max_runtime_hint_minutes", 30)), policy.project_explicit, policy.allow_project_fallback, policy.retention, policy.cleanup_remote)
         return started.to_dict()
 
     def get_research_result(self, job_id: str): return redact_obj(self.jobs.get(job_id))
@@ -292,4 +299,4 @@ def get_service() -> WebBrainService:
     return _default
 
 def expected_tools():
-    return ["ask_brain", "ask_web", "start_research", "get_research_result", "get_job_result", "cancel_research_job", "list_projects", "open_project", "create_project", "start_project_conversation", "delete_remote_project", "delete_local_record", "purge_project_records", "delete_remote_conversation", "list_remote_cleanup", "cleanup_remote_conversations", "ui_capabilities_check", "list_web_sessions", "open_login_window", "doctor", "cleanup_browser", "daemon_status"]
+    return ["product_policy", "resolve_policy", "ask_brain", "ask_web", "start_research", "get_research_result", "get_job_result", "cancel_research_job", "list_projects", "open_project", "create_project", "start_project_conversation", "delete_remote_project", "delete_local_record", "purge_project_records", "delete_remote_conversation", "list_remote_cleanup", "cleanup_remote_conversations", "ui_capabilities_check", "list_web_sessions", "open_login_window", "doctor", "cleanup_browser", "daemon_status"]
